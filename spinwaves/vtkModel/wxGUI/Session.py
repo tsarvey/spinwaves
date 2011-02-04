@@ -1786,7 +1786,7 @@ class atomTable(wx.grid.PyGridTableBase):
     what is in this table."""
     def __init__(self):
         wx.grid.PyGridTableBase.__init__(self)
-        self.colLabels = ['Symbol', "Atomic Number\n  (optional)",'Valence', '   x   ', '   y   ','   z   ', '  Dx  ', '  Dy  ', '  Dz  ', 'Spin Magnitude']
+        self.colLabels = ['Symbol', "  Z  ",'Valence', '   x   ', '   y   ','   z   ', '  Dx  ', '  Dy  ', '  Dz  ', 'Spin Magnitude']
         self.rowLabels=['Atom 1']
         
         self.data = [

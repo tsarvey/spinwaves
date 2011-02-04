@@ -216,6 +216,65 @@ class atomPanel(wx.Panel):
 		#execute the function OnGenerate when the generate button is pressed
 		self.Bind(wx.EVT_BUTTON, self.OnGenerate, self.genButton)
 		connect(self.OnFileLoad, signal = "File Load")
+		
+		self.Bind(wx.grid.EVT_GRID_CELL_CHANGE, self.onCellChange, self.atomList)
+
+	def onCellChange(self, event):
+		"""When a cell in the atom table is changed, this methood will be called.  It will check if the changed cell was either
+		the symbol cell or the  atomic number cell and if it is it will validate the entry and change make sure the symbol and
+		atomic number match."""
+		
+		bgColor = "PINK"
+		row = event.GetRow()
+		col = event.GetCol()
+		if col == 0: #Symbol
+			name = self.atomList.GetCellValue(row, col)
+			#Check that name is a valid element symbol
+			name = name.strip()
+			for element in periodictable.elements:
+				if name.lower() == element.symbol.lower() and element.symbol!='n':
+					name = element.symbol#get correct capitalization
+					#Check that the atomic number agrees
+					
+					ElObj = element
+					attr = wx.grid.GridCellAttr()
+					attr.SetBackgroundColour("white")
+					self.atomList.SetAttr(row, 0, attr)
+					self.atomList.SetCellValue(row,0,name)
+					self.atomList.SetCellValue(row, 1, str(ElObj.number))
+					attr = wx.grid.GridCellAttr()
+					attr.SetBackgroundColour("white")
+					self.atomList.SetAttr(row, 1, attr)
+					break;
+			else:
+				#check if the atomic number is filled in
+				attr = wx.grid.GridCellAttr()
+				attr.SetBackgroundColour(bgColor)
+				self.atomList.SetAttr(row, 0, attr)
+		elif col == 1: #atomic NumbernumB = None
+			z = None
+			try:
+				z = int(self.atomList.GetCellValue(row, col))
+			except:
+				attr = wx.grid.GridCellAttr()
+				attr.SetBackgroundColour(bgColor)
+				self.atomList.SetAttr(row, col, attr)
+				return
+			for el in periodictable.elements:
+				if el.number == z:
+					attr = wx.grid.GridCellAttr()
+					attr.SetBackgroundColour("white")
+					self.atomList.SetAttr(row, col, attr)
+					self.atomList.SetCellValue(row, 0 , el.symbol)
+					attr = wx.grid.GridCellAttr()
+					attr.SetBackgroundColour("white")
+					self.atomList.SetAttr(row, 0, attr)
+					break;
+			else:
+				#check if the atomic number is filled in
+				attr = wx.grid.GridCellAttr()
+				attr.SetBackgroundColour(bgColor)
+				self.atomList.SetAttr(row, col, attr)
 
 
 	def OnFileLoad(self, spaceGroup, a, b, c, alpha, beta, gamma, magNa, magNb, magNc, cutNa, cutNb, cutNc):
@@ -418,6 +477,8 @@ class atomPanel(wx.Panel):
 			for element in periodictable.elements:
 				if name.lower() == element.symbol.lower() and element.symbol!='n':
 					name = element.symbol#get correct capitalization
+					#Check that the atomic number agrees
+					
 					ElObj = element
 					attr = wx.grid.GridCellAttr()
 					attr.SetBackgroundColour("white")
@@ -425,31 +486,32 @@ class atomPanel(wx.Panel):
 					self.atomList.SetCellValue(row,0,name)
 					break;
 			else:
+				#check if the atomic number is filled in
 				attr = wx.grid.GridCellAttr()
 				attr.SetBackgroundColour(bgColor)
 				self.atomList.SetAttr(row, 0, attr)
 				failed = True
 			
 			atomicNum = None
-			if self.atomList.GetCellValue(row,1) != '':#allow it to be empty
-				try:
-					atomicNum = int(self.atomList.GetCellValue(row, 1))
-					#Check that atomicNum is a valid atomic number for the element
-					attr = wx.grid.GridCellAttr()
-					attr.SetBackgroundColour("white")
-					self.atomList.SetAttr(row, 1, attr)
-					try:
-						print "Element: ", ElObj
-						ElObj[atomicNum]
-					except:
-						attr.SetBackgroundColour(bgColor)
-						self.atomList.SetAttr(row, 1, attr)
-						failed = True
-				except:
-					attr = wx.grid.GridCellAttr()
-					attr.SetBackgroundColour(bgColor)
-					self.atomList.SetAttr(row, 1, attr)
-					failed = True
+			#if self.atomList.GetCellValue(row,1) != '':#allow it to be empty
+				#try:
+					#atomicNum = int(self.atomList.GetCellValue(row, 1))
+					##Check that atomicNum is a valid atomic number for the element
+					#attr = wx.grid.GridCellAttr()
+					#attr.SetBackgroundColour("white")
+					#self.atomList.SetAttr(row, 1, attr)
+					#try:
+						#print "Element: ", ElObj
+						#ElObj[atomicNum]
+					#except:
+						#attr.SetBackgroundColour(bgColor)
+						#self.atomList.SetAttr(row, 1, attr)
+						#failed = True
+				#except:
+					#attr = wx.grid.GridCellAttr()
+					#attr.SetBackgroundColour(bgColor)
+					#self.atomList.SetAttr(row, 1, attr)
+					#failed = True
 				
 
 			#Valence at 2
