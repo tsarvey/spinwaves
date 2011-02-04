@@ -1,3 +1,14 @@
+"""
+Disclaimer
+==========
+
+This software was developed at the National Institute of Standards and Technology at the NIST Center for Neutron Research by employees of the Federal Government in the course of their official duties. Pursuant to title 17 section 105* of the United States Code this software is not subject to copyright protection and is in the public domain. The SPINAL software package is an experimental spinwave analysis system. NIST assumes no responsibility whatsoever for its use, and makes no guarantees, expressed or implied, about its quality, reliability, or any other characteristic. The use of certain trade names or commercial products does not imply any endorsement of a particular product, nor does it imply that the named product is necessarily the best product for the stated purpose. We would appreciate acknowledgment if the software is used.
+
+*Subject matter of copyright: United States Government works
+
+Copyright protection under this title is not available for any work of the United States Government, but the United States Government is not precluded from receiving and holding copyrights transferred to it by assignment, bequest, or otherwise."""
+
+
 from BondClass import Bond
 import numpy
 import CifFile
@@ -55,17 +66,82 @@ class MagneticCell():
 
         #Recording bonds that are mapped back onto themselves by a symOp
         self.bondConstraints = []
+
+    def addAtom(self, symbol, position, massNum = None, **kwds):
+        """Given the information of one atom and the space group associated with
+        this Cell object, this method creates all the symmetry equivalent atoms
+        and adds them to the model (cutoff cell).
         
-    def addBond(self, Atom1, Atom2, jMatrix = None):     
-        """Adds a bond and all symmettry equivalent bonds within the magnetic Cell
+        -symbol is the element symbol (H, He, Li...)
+	-massNum is the atomic Mass Number for the element
+	If the symbol and mass number do not correspond to a real element, an
+	ElementNotFound Exception will be raised.
+	
+        -position is the fractional coordinates in the unit cell (a,b,c)
         
-        Performs every symmetry operation and every possible translation for each 
-        symmetry operation to find all possible bonds"""
+        Optional keyword arguments are:
+        (spin, spinMagnitude, valence, anisotropy, rgb, radius, and description)
+        
+        -spin is a tuple(Sx, Sy, Sz). It is optional.
+        -spinMagnitude is the total magnitude of the spin =sqrt(Sx^2+Sy^2+Sz^2)
+        -anisotropy is the single ion anisotropy of the atom (Dx, Dy, Dz)
+        -rgb is a 3 element tuple or list describing the color of the atom.  If
+        this is notsupplied, the default color for that element is used.
+        -radius is the radius of the atom in angstroms.  If it is None, it will
+        be given the default value for the given element.
+        -description is a string describing the atom such as a name/label and is
+        optional.
+        -Valence is a string describing the charge of the atom.
+        """
+        
+        for cell in self.AllUnitCells:
+            cell.generateAtoms(symbol, position, massNum, **kwds)
+            
+    
+    def addBond(self, atom1Num = None, atom1CellPos = None, atom2Num = None,
+                atom2CellPos = None, jMatrix = None, atom1 = None,
+                atom2 = None):
+        """Adds an interaction between two atoms.
+        
+        atom1Num is the unique number identifying the given atom in the unit cell.
+	atom1CellPos is a 3 integer tuple with the coordinates of the unit
+	cell containing atom1.
+        
+        JMatrix is the 3x3 matrix describing the spin-spin interaction between
+        the atoms for the heisenberg hamiltonian.
+        
+        If a bond with the same JMatrix that links the same two atoms already exists 
+        nothing happens.  If a bond linking the two atoms exists, but has a different
+        JMatrix, an Exception is raised.
+        """
+        if atom1 == None:
+            cell1 = self.cellAtPosition((atom1CellPos[0], atom1CellPos[1], atom1CellPos[2]))
+            atom1 = cell1.atomWithID(atom1Num)
+            
+        if atom2 == None:
+            cell2 = self.cellAtPosition((atom2CellPos[0], atom2CellPos[1], atom2CellPos[2]))
+            atom2 = cell2.atomWithID(atom2Num)
+        
+        existingBond = self.getBond(atom1, atom2)
+        if existingBond != None:
+            if (existingBond.getJMatrix() != jMatrix).any():
+                #An exception will be raised if a different bond already exists
+                #that links these atoms.
+                raise Exception("A Bond already exists linking Atom1: " +
+                                atom1.__str__()+" and Atom2: "+atom2.__str__())
+            else:#The bond exists, but it's the same bond
+                return
+            
+    #def addBond(self, Atom1, Atom2, jMatrix = None):     
+        #"""Adds a bond and all symmettry equivalent bonds within the magnetic Cell
+        
+        #Performs every symmetry operation and every possible translation for each 
+        #symmetry operation to find all possible bonds"""
         
         #Create Symmetry Bonds
         
-        xyz = Atom1.getPosition()
-        xyz2 = Atom2.getPosition()
+        xyz = atom1.getPosition()
+        xyz2 = atom2.getPosition()
         
         for symop in self.space_Group.iter_symops():
         # operate on coordinates in non-shifted spacegroup
@@ -229,6 +305,14 @@ class MagneticCell():
     
     def getBonds(self):
         return self.Bonds
+    
+    def getBond(self, atom1, atom2):
+        """Returns the bond linking atom1 and atom2, or None if no such bond."""
+        for eachBond in self.getBonds():
+            if eachBond.getAtom1() == atom1 or eachBond.getAtom2() == atom1:
+                if eachBond.getAtom1() == atom2 or eachBond.getAtom2() == atom2:
+                    return eachBond
+        return None
     
     def hasBond(self, atom1, atom2, jMatrix = None):
         """Returns true if this magnetic cell contains a bond linking atom1 and

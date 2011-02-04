@@ -8,6 +8,16 @@ typedef float Spin[3];
 typedef float Anisotropy[3];
 typedef float InteractionMatrix[3][3];
 
+typedef struct
+{
+        int numInteractions;
+        int *interaction_matrix;
+        int *nbr_list;
+        Spin spin;
+        Anisotropy anisotropy;
+        float spinMag;
+} Atom;
+
 static dsfmt_t dsfmt_state;
 
 float randf()
@@ -60,21 +70,9 @@ void randSpin(Spin spin, float magnitude)
        spin[2] = Sz * magnitude;
        return;
 }
-
-typedef struct
-{
-        int numInteractions;
-        int *interaction_matrix;
-        int *nbr_list;
-//        float *spin;
-        Spin spin;
-        Anisotropy anisotropy;
-        float spinMag;
-} Atom;
         
 void del_jMat(InteractionMatrix *m)
 {
-     printf("%x %d", m, m);
      int i, j;
      printf("deleting\n");
      for(i = 0; i < 3; i++)
@@ -180,12 +178,14 @@ void atomTest(Atom *p, int num)
      int j;
      for(i = 0; i < num; i++)
      {
-           printf("%d) Spin: (%d,%d,%d) interactions: %d( ", i, p[i].spin[0], p[i].spin[1], p[i].spin[2], p[i].nbr_list);
+           printf("%d) Spin: (%f,%f,%f) interactions: ( ", i, p[i].spin[0],
+           p[i].spin[1], p[i].spin[2]);
+           
            for(j = 0; j < p[i].numInteractions; j++)
            {
                  printf("%d ", p[i].nbr_list[j]);
            }
-           printf(") jMats: %d( ", p[i].interaction_matrix);
+           printf(") jMats: ( ");
            for(j = 0; j < p[i].numInteractions; j++)
            {
                  printf("%d ", p[i].interaction_matrix[j]);
@@ -336,10 +336,12 @@ void simulate(Atom *atoms, int numAtoms, InteractionMatrix *jMatrices, int k, fl
      float fracFlipped;
      int i,j, flipped;
      
+     /*
      for(i = 0; i < numAtoms; i++)
      {
            printf("Anisotropy: (%f, %f, %f)\n", atoms[i].anisotropy[0], atoms[i].anisotropy[1], atoms[i].anisotropy[2]);
-     }   
+     } 
+     */  
      
      
      printf("\nnumAtoms = %d\n", numAtoms);
@@ -355,7 +357,7 @@ void simulate(Atom *atoms, int numAtoms, InteractionMatrix *jMatrices, int k, fl
                      flipSpins(atoms, numAtoms, jMatrices, T, &flipped);
              }
              fracFlipped = ((float)flipped)/(k * numAtoms);
-             printf("Temperature: %f  Fraction flipped: %f\n", T, fracFlipped);
+             //printf("Temperature: %f  Fraction flipped: %f\n", T, fracFlipped);
              T = T*tFactor;
      }
  

@@ -7,7 +7,7 @@
 ; (To generate a new GUID, click Tools | Generate GUID inside the IDE.)
 AppId={{DAF39190-F756-4556-B3A8-6A15BF771BCD}
 AppName=Spinwaves
-AppVerName=Spinwaves 0.1.0
+AppVerName=Spinwaves 0.1.1
 AppPublisher=NCNR, NIST
 AppPublisherURL=http://spinwaves.googlecode.com
 AppSupportURL=http://spinwaves.googlecode.com
@@ -15,10 +15,10 @@ AppUpdatesURL=http://spinwaves.googlecode.com
 DefaultDirName={pf}\Spinwaves
 DefaultGroupName=Spinwaves
 AllowNoIcons=yes
-LicenseFile=C:\Documents and Settings\All Users\Documents\Python\SpinwaveApp\win\spinwaves_license.txt
-OutputDir=C:\Documents and Settings\tsarvey\Desktop
+LicenseFile=C:\Users\Tom\Desktop\Spinwaves\win\spinwaves_license.txt
+OutputDir=C:\Users\Tom\Desktop\Spinwaves\
 OutputBaseFilename=setup
-SetupIconFile=C:\Documents and Settings\All Users\Documents\Python\SpinwaveApp\win\screen.ico
+SetupIconFile=C:\Users\Tom\Desktop\Spinwaves\win\screen.ico
 Compression=lzma
 SolidCompression=yes
 
@@ -29,8 +29,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "C:\Documents and Settings\All Users\Documents\Python\SpinwaveApp\win\dist\Spinwaves.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "C:\Documents and Settings\All Users\Documents\Python\SpinwaveApp\win\dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "C:\Users\Tom\Desktop\Spinwaves\win\dist\Spinwaves.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "C:\Users\Tom\Desktop\Spinwaves\win\dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]

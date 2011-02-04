@@ -1,3 +1,14 @@
+"""
+Disclaimer
+==========
+
+This software was developed at the National Institute of Standards and Technology at the NIST Center for Neutron Research by employees of the Federal Government in the course of their official duties. Pursuant to title 17 section 105* of the United States Code this software is not subject to copyright protection and is in the public domain. The SPINAL software package is an experimental spinwave analysis system. NIST assumes no responsibility whatsoever for its use, and makes no guarantees, expressed or implied, about its quality, reliability, or any other characteristic. The use of certain trade names or commercial products does not imply any endorsement of a particular product, nor does it imply that the named product is necessarily the best product for the stated purpose. We would appreciate acknowledgment if the software is used.
+
+*Subject matter of copyright: United States Government works
+
+Copyright protection under this title is not available for any work of the United States Government, but the United States Government is not precluded from receiving and holding copyrights transferred to it by assignment, bequest, or otherwise."""
+
+
 import SymmetryUtilities
 import numpy
 from AtomClass import Atom
@@ -8,7 +19,7 @@ class Cell():
     """This class models a single crystallographic unit cell. (The entire
     lattice could consist of many of these.)
 
-    The class is instatiated with the space group and dimensions(although
+    The class is instantiated with the space group and dimensions(although
     the dimensions are not currently used for anything).
     Then atoms can be added using the generateAtoms() method which will add
     all symmetry equivalent atoms."""
@@ -29,7 +40,7 @@ class Cell():
         self.PosY = PosY
         self.PosZ = PosZ
         
-        #Dimensions (Currently not used)
+        #Dimensions
         self.a = a
         self.b = b
         self.c = c
@@ -38,7 +49,9 @@ class Cell():
         self.beta = beta
         
         #List of atom contained in this unit cell
-        self.Atoms = []
+        #self.Atoms = []
+        #Each atom is given a unique identifying ID number (they key in this dictionary)
+        self.atoms = {}
         
         
     
@@ -50,9 +63,11 @@ class Cell():
         """Returns the atom at the position if one exists, None otherwise"""
         if self.positionIsInCell(position):
             positionList = []
-            for atom in self.Atoms:
+            tmpAtoms = []
+            for num, atom in self.atoms.items():
+                tmpAtoms.append(atom)
                 positionList.append(atom.getPosition())
-            closest = self.Atoms[SymmetryUtilities.nearestSiteIndex(positionList,position)]
+            closest = tmpAtoms[SymmetryUtilities.nearestSiteIndex(positionList,position)]
             if SymmetryUtilities.equalPositions(closest.getPosition(), position):
                 return closest
         return None
@@ -67,10 +82,22 @@ class Cell():
         return False
     
     def addAtom(self, Atom):
-        self.Atoms.append(Atom)
+        """Adds the given atom to this unit cell and gives it a new unique id
+        number which can be used to reference the atom within the cell. This id
+        number is also returned.
+	"""
+        idNum = 1#numbers sart at 1
+        keys = self.atoms.keys()
+        keys.sort()
+        if len(keys) > 0:
+            maxVal = keys[len(keys)-1]
+            while idNum <= maxVal and idNum == keys[idNum-1]:
+                idNum += 1
+        self.atoms[idNum] = Atom
+        return idNum
     
     def getAtoms(self):
-        return self.Atoms
+        return self.atoms.values()
     
     def setPosX(self, x):
         self.PosX = x
@@ -91,47 +118,74 @@ class Cell():
         The new cell will have the translated coordinates and a list of atoms
         with the same indeces(which are used as an identifying characteristic)
         as their cooresponding atoms in this cell."""
-        new_cell = Cell(self.Space_Group,a,b,c)
-        for atomn in self.Atoms:  #should preserve order of Atoms
-            position = atomn.getPosition()
-            color = atomn.getColor()
-            new_cell.addAtom(Atom(new_cell, position[0], position[1], position[2], atomn.atomicNumber, atomn.getDescription(), atomn.valence, atomn.getRadius(), color[0], color[1], color[2], anisotropy = atomn.getAnisotropy(), spinMagnitude = atomn.spinMagnitude))
-        
+        new_cell = Cell(self.Space_Group,a,b,c,self.a, self.b, self.c, self.alpha, self.beta, self.gamma)
+        for atomn in self.atoms.values():  #should preserve order of Atoms
+            #new_cell.addAtom(Atom(new_cell, position[0], position[1], position[2], atomn.massNumber, atomn.getDescription(), atomn.valence, atomn.getRadius(), color[0], color[1], color[2], anisotropy = atomn.getAnisotropy(), spinMagnitude = atomn.spinMagnitude, elementObj = atomn.getElementObj()))
+            new_atom = Atom(new_cell, atomn.getPosition(),
+                            atomn.getElementSymbol(), atomn.getMassNum(),
+                            atomn.getValence(), atomn.getAnisotropy(),
+                            atomn.getSpinMagnitude(), atomn.getSpin(),
+                            atomn.getDescription(), atomn.getColor(),
+                            atomn.getRadius())
+            #make sure the id numbers match up and ar the same as original cell
+            new_cell.atoms.pop(new_atom.getIDNum())
+            new_atom.IDNumber = atomn.IDNumber
+            new_cell[atomn.IDNumber] = new_atom
+
         return new_cell
 
     def __str__(self):
         return "unit cell at (" + str(self.PosX) + ", " + str(self.PosY) + ", " + str(self.PosZ) + ")"
     
-    def atomAtIndex(self, i):
-        return self.Atoms[i]
+    def atomWithID(self, idNum):
+        return self.atoms[idNum]
     
-    def getAtomIndex(self, atom):
-        return self.Atoms.index(atom)
+    def getAtomID(self, atom):
+        """Will return the ID number of the given atom in this cell.
+	If the atom is not in this cell, a KeyError will be raised."""
+        for key in self.atoms.keys():
+            if self.atoms[key] == atom:
+                return key
+        #None could also be returned, but the user is either testing for this
+        #case(in which case it doesn't matter what how I handle it, or they
+        #are not and an error will ccur somewhere.  Better here than somewhere
+        #where it will be hard to track the problem.
+        raise ValueError("That atom does not exist in this unit cell.")
     
-    def generateAtoms(self, position, description, atomicNumber, valence, anisotropy = (0,0,0), spinMagnitude = 1, radius = .05):
+    #def generateAtoms(self, elementObj, position, massNumber, valence, anisotropy = (0,0,0), spinMagnitude = 1, description = "", spin = None, rgb = None, radius = None):
+    def generateAtoms(self, symbol, position, massNum = None, **kwds):
         """Given the information of one atom and the space group associated with
         this Cell object, this method creates all the symmetry equivalent atoms
-        and adds them to the list."""
+        and adds them to the model (cutoff cell).
         
+        -symbol is the element symbol (H, He, Li...)
+	-massNum is the atomic Mass Number for the element
+	If the symbol and mass number do not correspond to a real element, an
+	ElementNotFound Exception will be raised.  massNum can, however, be None.
+	
+        -position is the fractional coordinates in the unit cell (a,b,c)
+        
+        Optional keyword arguments are:
+        (spin, spinMagnitude, valence, anisotropy, rgb, radius, and description)
+        
+        -spin is a tuple(Sx, Sy, Sz). It is optional.
+        -spinMagnitude is the total magnitude of the spin =sqrt(Sx^2+Sy^2+Sz^2)
+        -anisotropy is the single ion anisotropy of the atom (Dx, Dy, Dz)
+        -rgb is a 3 element tuple or list describing the color of the atom.  If
+        this is notsupplied, the default color for that element is used.
+        -radius is the radius of the atom in angstroms.  If it is None, it will
+        be given the default value for the given element.
+        -description is a string describing the atom such as a name/label and is
+        optional.
+        -Valence is a string describing the charge of the atom.
+        """
         locations = SymmetryUtilities.expandPosition(self.Space_Group, numpy.array([position[0],position[1], position[2]]))[0]
 
-        #Create a random color for the atoms; In the future the color will be chosen
-        #from a list based on hte atomic number along with the radius
-        randGen = random.Random()
-        r = random.uniform(0,1)
-        g = random.uniform(0,1)
-        b = random.uniform(0,1)
         for coord in locations:
-#===============================================================================
-#            print 'unit_cell:', self
-#            print 'x,y,z:', coord
-#            print 'atomicNum:', atomicNumber
-#            print 'description:', description
-#            print 'radius:', radius
-#===============================================================================
-            print 'here'
-            atom = Atom(self, coord[0], coord[1], coord[2], atomicNumber, description, valence, radius, r,g,b, anisotropy = anisotropy, spinMagnitude = spinMagnitude)
-            self.addAtom(atom)
+            #atom = Atom(self, coord[0], coord[1], coord[2], massNumber, description, valence, radius, r,g,b, anisotropy = anisotropy, spinMagnitude = spinMagnitude, elementObj = elementObj)
+            #atom = Atom(elementObj, self, coord, valence, anisotropy, spinMagnitude, spin, description, rgb, radius)
+            Atom(self, coord, symbol, massNum, **kwds)
+            #self.addAtom(atom)
 
     def getA(self):
         return self.a

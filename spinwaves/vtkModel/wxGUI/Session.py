@@ -1,3 +1,14 @@
+"""
+Disclaimer
+==========
+
+This software was developed at the National Institute of Standards and Technology at the NIST Center for Neutron Research by employees of the Federal Government in the course of their official duties. Pursuant to title 17 section 105* of the United States Code this software is not subject to copyright protection and is in the public domain. The SPINAL software package is an experimental spinwave analysis system. NIST assumes no responsibility whatsoever for its use, and makes no guarantees, expressed or implied, about its quality, reliability, or any other characteristic. The use of certain trade names or commercial products does not imply any endorsement of a particular product, nor does it imply that the named product is necessarily the best product for the stated purpose. We would appreciate acknowledgment if the software is used.
+
+*Subject matter of copyright: United States Government works
+
+Copyright protection under this title is not available for any work of the United States Government, but the United States Government is not precluded from receiving and holding copyrights transferred to it by assignment, bequest, or otherwise."""
+
+
 import string
 import copy
 import xml.dom.minidom
@@ -15,6 +26,10 @@ import datetime
 from spinwaves.vtkModel.BondClass import JParam
 from spinwaves.vtkModel.Parameter_Manager import ParamManager
 import spinwaves.vtkModel.CifFile as CifFile
+from spinwaves.vtkModel.SpaceGroups import GetSpaceGroup
+from spinwaves.vtkModel.AtomClass import getElObj
+from spinwaves.vtkModel.SymmetryUtilities import equalPositions
+from spinwaves.vtkModel.AtomClass import getElObj
 
 class Session():
     """Stores information about a user session
@@ -94,12 +109,12 @@ class Session():
         
         
         spaceGroupInt = int(unitCellNode.getAttribute('space_group'))
-        a = unitCellNode.getAttribute('a')
-        b = unitCellNode.getAttribute('b')
-        c = unitCellNode.getAttribute('c')
-        alpha = unitCellNode.getAttribute('alpha')
-        beta = unitCellNode.getAttribute('beta')
-        gamma = unitCellNode.getAttribute('gamma')
+        a = float(unitCellNode.getAttribute('a'))
+        b = float(unitCellNode.getAttribute('b'))
+        c = float(unitCellNode.getAttribute('c'))
+        alpha = float(unitCellNode.getAttribute('alpha'))
+        beta = float(unitCellNode.getAttribute('beta'))
+        gamma = float(unitCellNode.getAttribute('gamma'))
         Na = int(magCellNode.getAttribute('Na'))
         Nb = int(magCellNode.getAttribute('Nb'))
         Nc = int(magCellNode.getAttribute('Nc'))
@@ -109,7 +124,8 @@ class Session():
         atomData = []
         for i in range(len(atomNodes)):
             name = atomNodes[i].getAttribute('Name')
-            atomicNum = atomNodes[i].getAttribute('Atomic_Number')
+            #I called this massNum, but it's really the atomic number now
+            massNum = atomNodes[i].getAttribute('Atomic_Number')
             x = atomNodes[i].getAttribute('x')
             y = atomNodes[i].getAttribute('y')
             z = atomNodes[i].getAttribute('z')
@@ -119,12 +135,12 @@ class Session():
             spinMag = atomNodes[i].getAttribute('spin_magnitude')
             valence = atomNodes[i].getAttribute('valence')
             
-            atomData.append([name, int(atomicNum), float(x),float(y),float(z),
+            atomData.append([name, int(massNum), float(x),float(y),float(z),
                              float(Dx), float(Dy), float(Dz), float(spinMag),
                              valence])
             
             self.atomTable.SetValue(i, 0, name)
-            self.atomTable.SetValue(i, 1, atomicNum)
+            self.atomTable.SetValue(i, 1, massNum)
             self.atomTable.SetValue(i, 2, valence)
             self.atomTable.SetValue(i, 3, x)
             self.atomTable.SetValue(i, 4, y)
@@ -244,7 +260,11 @@ class Session():
             self.bondTable.SetValue(i, 8, mat)
 
         
-        self.cellChange(spaceGroupInt, a, b, c, alpha, beta, gamma, Na, Nb, Nc, Na, Nb, Nc, atomData, notifyGUI)
+        #self.cellChange(spaceGroupInt, a, b, c, alpha, beta, gamma, Na, Nb, Nc, Na, Nb, Nc, atomData, notifyGUI)
+        self.updateCell(spaceGroupInt, a, b, c, alpha, beta, gamma, Na, Nb, Nc,
+                        Na, Nb, Nc, atomData)
+        if notifyGUI:
+            self.refreshGUI()
         
         return spaceGroupInt, a, b, c, alpha, beta, gamma, Na, Nb, Nc, Na, Nb, Nc, atomData
         
@@ -258,60 +278,215 @@ class Session():
         
         #Send Message to GUI
         send(signal = "File Load", sender = "Session", spaceGroup = spaceGroupInt, a = a, b = b, c = c, alpha = alpha, beta = beta, gamma = gamma, magNa = Na, magNb = Nb, magNc = Nc, cutNa = Na, cutNb = Nb, cutNc = Nc)
+        send(signal = "Generate Bonds", sender = "Session", event=None)
         
-             
-                
-    def changeBonds(self, bondData, notifyGUI = True):
-        """This method is called when the bonds need to be changed in the model,
-        such as when info is entered in the GUI or when a file is loaded."""
+    def clearBonds(self):
         self.MagCell.clearAllBonds()
-        for i in range(len(bondData)):
-            if len(bondData[i]) < 10 or bondData[i][9] == 'X': #When this method is called by the load file method, it includes the rows that are off
-                cell1 = self.MagCell.cellAtPosition((int(bondData[i][1]), int(bondData[i][2]), int(bondData[i][3])))
-                cell2 = self.MagCell.cellAtPosition((int(bondData[i][5]), int(bondData[i][6]), int(bondData[i][7])))
                 
-                atom1 = cell1.atomAtIndex(int(bondData[i][0]) - 1)
-                atom2 = cell2.atomAtIndex(int(bondData[i][4]) - 1)
+    #def changeBonds(self, bondData, notifyGUI = True):
+        #"""This method is called when the bonds need to be changed in the model,
+        #such as when info is entered in the GUI or when a file is loaded.
+        #If bondData includes two bonds connecting the same two atoms, an
+        #exception will be raised."""
+        ##This function was implemented before addBond() or refreshGUI()
+        #self.MagCell.clearAllBonds()
+        #for i in range(len(bondData)):
+            #if len(bondData[i]) < 10 or bondData[i][9] == 'X': #When this method is called by the load file method, it includes the rows that are off
+                #cell1 = self.MagCell.cellAtPosition((int(bondData[i][1]), int(bondData[i][2]), int(bondData[i][3])))
+                #cell2 = self.MagCell.cellAtPosition((int(bondData[i][5]), int(bondData[i][6]), int(bondData[i][7])))
+                
+                #atom1 = cell1.atomAtIndex(int(bondData[i][0]) - 1)
+                #atom2 = cell2.atomAtIndex(int(bondData[i][4]) - 1)
+                
     
-                #bondData[i][8] can be '' instead of None
-                if not isinstance(bondData[i][8], str):
-                    if not self.MagCell.hasBond(atom1, atom2, bondData[i][8]):
-                        self.MagCell.addBond(atom1, atom2, bondData[i][8])
-                else:
-                    if not self.MagCell.hasBond(atom1, atom2):
-                        self.MagCell.addBond(atom1, atom2)
+                ##bondData[i][8] can be '' instead of None
+                #if not isinstance(bondData[i][8], str):
+                    #if not self.MagCell.hasBond(atom1, atom2, bondData[i][8]):
+                        #self.MagCell.addBond(atom1, atom2, bondData[i][8])
+                #else:
+                    #if not self.MagCell.hasBond(atom1, atom2):
+                        #self.MagCell.addBond(atom1, atom2)
                         
-        if notifyGUI:
-            send(signal = "Model Change", sender = "Session")
-                    
+        #if notifyGUI:
+            #send(signal = "Model Change", sender = "Session")
+                        
+    def addBond(self, **kwds):
+        """This will add a bond connecting atom1 and atom2.
+	
+        Keywords:	
+	(atom1Num, atom1CellPos, atom2Num, atom2CellPos, jMatrix, atom1, atom2)
         
-    def cellChange(self,spaceGroupInt,a,b,c,alpha, beta, gamma, magNa, magNb, magNc, cutNa, cutNb, cutNc, atomData, notifyGUI = True):
+        Either the atom or it's number and cell position must be supplied.
+	
+	atom1Num is the unique number identifying the given atom in the unit cell.
+	atom1CellPos is a 3 integer tuple with the coordinates of the unit
+	cell containing atom1.
+        
+        JijMatrix is the 3x3 matrix describing the spin-spin interaction between
+        the atoms for hte heisenberg hamiltonian.
+        
+        If a bond with the same JMatrix that links the same two atoms already exists 
+        nothing happens.  If a bond linking the two atoms exists, but has a different
+        JMatrix, an Exception is raised.
+	"""
+        print kwds
+        self.MagCell.addBond(**kwds)
+        
+        
+    def newCell(self,spaceGroupInt,a,b,c,alpha, beta, gamma, magNa, magNb, magNc, cutNa, cutNb, cutNc):
         """This method is called when a change needs to be made to the
-        crystallographic or cutoff(or magnetic) cells or the atoms in them, such
-        as when the user enters info in the GUI or when a file is loaded."""
+        crystallographic or cutoff(or magnetic), such as when the user enters
+        info in the GUI or when a file is loaded.  To add atoms to the new
+        unit cell, call addAtom().
+        """
         spaceGroup = SpaceGroups.GetSpaceGroup(spaceGroupInt)
-        
         unitcell = Cell(spaceGroup, 0,0,0, a, b, c, alpha, gamma, beta)
-        
-        
-        for i in range(len(atomData)):
-            #Since I am adding anisotropy later, some things(files) will not have it
-            anisotropy = None
-            try:
-                anisotropy = (atomData[i][5], atomData[i][6], atomData[i][7])
-            except IndexError:
-                print "Anisotropy not included!"
-            if anisotropy == None:
-                anisotropy = (0,0,0)#Can't be None
-            unitcell.generateAtoms((float(atomData[i][2]), float(atomData[i][3]), float(atomData[i][4])), atomData[i][0], atomData[i][1], atomData[i][9], anisotropy = anisotropy, spinMagnitude = atomData[i][8])
-        
-        #Create a Magnetic Cell
-        #self.MagCell = MagneticCell(unitcell, magNa, magNb, magNc, spaceGroup)
-        #Using Cutoff Cell as MagCell
         self.MagCell = MagneticCell(unitcell, cutNa, cutNb, cutNc, spaceGroup)
         
         #Regenerate Bonds as well
-        self.changeBonds(self.bondTable.data, notifyGUI)
+        #self.changeBonds(self.bondTable.data, notifyGUI)
+        
+    def addAtom(self, symbol, position, massNum = None, **kwds):
+        """Given the information of one atom and the space group associated with
+        this Cell object, this method creates all the symmetry equivalent atoms
+        and adds them to the model (cutoff cell).
+        
+        -symbol is the element symbol (H, He, Li...)
+	-massNum is the atomic Mass Number for the element
+	If the symbol and mass number do not correspond to a real element, an
+	ElementNotFound Exception will be raised.
+	
+        -position is the fractional coordinates in the unit cell (a,b,c)
+        
+        Optional keyword arguments are:
+        (spin, spinMagnitude, valence, anisotropy, rgb, radius, and description)
+        
+        -spin is a tuple(Sx, Sy, Sz). It is optional.
+        -spinMagnitude is the total magnitude of the spin =sqrt(Sx^2+Sy^2+Sz^2)
+        -anisotropy is the single ion anisotropy of the atom (Dx, Dy, Dz)
+        -rgb is a 3 element tuple or list describing the color of the atom.  If
+        this is notsupplied, the default color for that element is used.
+        -radius is the radius of the atom in angstroms.  If it is None, it will
+        be given the default value for the given element.
+        -description is a string describing the atom such as a name/label and is
+        optional.
+        -Valence is a string describing the charge of the atom.
+        """
+        self.MagCell.addAtom(symbol, position, massNum, **kwds)
+        
+    def updateCell(self, spaceGroupInt, a,b,c, alpha, beta, gamma, magNa, magNb,
+                   magNc, cutNa, cutNb, cutNc, atomData):
+        """Updtates the cell with the supplied parameters.
+        
+        The cell is recreated and the atoms in atomData recreated.  If this is
+        the first time any cutoff cell has been created, then a newone will be
+        made.  Otherwise, bonds that can be preserved will be if the atoms that
+        it connects still exist.  This will be determined based on position.
+        If the two ID numbers associated with the atoms of the bond refer to 
+        atoms whose positions have not changed, then the bond will also be
+        recreated.  Any bonds whose ID numbers refer to nonexistant atoms
+        or atoms whose positions have changed will be disabled.  The bond
+        information in the bondtable will not be changed.
+        
+        atomData is a list where each entry corresponds to one atom and is a
+        list of it's parameters in the following format:
+        [Symbol,MassNumber,aPos,bPos,cPos,Da,Db,Dc,spinMagnitude,valence]
+                                           ^anisotropy
+        """
+        oldBonds = None
+        if self.MagCell != None:
+            oldBonds = self.MagCell.getBonds()
+            
+        self.newCell(spaceGroupInt,a,b,c,alpha, beta, gamma, magNa, magNb,
+                     magNc, cutNa, cutNb, cutNc)
+        for data in atomData:
+            self.addAtom(symbol = data[0], massNum = data[1],#massNum will most likely be None
+                         position = (data[2], data[3], data[4]),
+                         anisotropy = (data[5], data[6], data[7]),
+                         spinMagnitude = data[8], valence = data[9])
+    
+        
+        if oldBonds != None:  #There were bonds that need be sorted out
+            for oldBond in oldBonds:
+                atom1 = oldBond.getAtom1()
+                atom2 = oldBond.getAtom2()
+                pos1 = atom1.getPosition()
+                pos2 = atom2.getPosition()
+                cell1 = self.MagCell.cellAtPosition(pos1)
+                cell2 = self.MagCell.cellAtPosition(pos2)
+                if cell1 != None and cell2 != None:
+                    newAtom1 = cell1.atomWithID(atom1.getIDNum())
+                    newAtom2 = cell2.atomWithID(atom2.getIDNum())
+                    if newAtom1 != None and newAtom2 != None:
+                        if equalPositions(newAtom1.getPosition(), pos1) and \
+                           equalPositions(newAtom2.getPosition(), pos2):
+                            #Save this Bond
+                            #Error condition should be impossible
+                            #Becuase many of these bonds are likely symmetry
+                            #equivalent, this method will be called for bonds
+                            #that already exist, but they won't be created.
+                            id1 = newAtom1.getIDNum()
+                            id2 = newAtom2.getIDNum()
+                            self.addBond(atom1Num = id1,
+                                         atom1CellPos = cell1.getPosition(),
+                                         atom2Num = id2,
+                                         atom2CellPos = cell2.getPosition())
+        
+        #Nothing is done to the bondtable for now   
+        #self.refreshGUI()
+        
+        
+    def refreshGUI(self):
+        send(signal = "Model Change", sender = "Session")
+        
+    #defcellChange(self,spaceGroupInt,a,b,c,alpha, beta, gamma, magNa, magNb, magNc, cutNa, cutNb, cutNc, atomData, notifyGUI = True):
+        #"""This method is called when a change needs to be made to the
+        #crystallographic or cutoff(or magnetic) cells or the atoms in them, such
+        #as when the user enters info in the GUI or when a file is loaded.
+
+        #atomData format (each line):
+        #label massNum aPos bPos cPos anisotropy_a anisotropy_b anistropy_c spinMag valence spinTuple elementObj
+                
+        #elementObj is optional.  If each entry in the list has a length of 11(elementObj not included)
+        #then label must be the symbol of the element(H, He, Li...).  If elementObj is not included
+        #and label does not correspond to an element symbol, and Exception will be generated.
+        
+        #spinTuple is also optional.  If the spin is unknown (or zero), spinTuple can be set to None.
+        #"""
+        #spaceGroup = SpaceGroups.GetSpaceGroup(spaceGroupInt)
+        
+        #unitcell = Cell(spaceGroup, 0,0,0, a, b, c, alpha, gamma, beta)
+        
+        
+        #for i in range(len(atomData)):
+            ##Since I am adding anisotropy later, some things(files) will not have it
+            ##anisotropy = None
+            ##try:
+            ##    anisotropy = (atomData[i][5], atomData[i][6], atomData[i][7])
+            ##except IndexError:
+            ##    print "Anisotropy not included!"
+            ##if anisotropy == None:
+            ##    anisotropy = (0,0,0)#Can't be None
+            #anisotropy = (atomData[i][5], atomData[i][6], atomData[i][7])
+            #if len(atomData[i]) > 11 and atomData[i][11] != None:#The entry can be left out or made None
+                ##unitcell.generateAtoms((float(atomData[i][2]), float(atomData[i][3]), float(atomData[i][4])), atomData[i][0], atomData[i][1], atomData[i][9], anisotropy = anisotropy, spinMagnitude = atomData[i][8], elementObj = atomData[i][10])
+                #unitcell.generateAtoms(elementObj = atomData[11], position = (atomData[2], atomData[3], atomData[4]),
+                                       #massNumber = atomData[1], valence = atomData[9],
+                                       #anisotropy = (atomData[5],atomData[6],atomData[7]),
+                                       #spinMagnitude = atomData[8], description = "", spin = None, rgb = None, radius = None)
+            #else:
+                #elObj = getElObj(atomData[i][0])#Throws exception if symbol doesn't exist
+                ##unitcell.generateAtoms((float(atomData[i][2]), float(atomData[i][3]), float(atomData[i][4])), atomData[i][0], atomData[i][1], atomData[i][9], anisotropy = anisotropy, spinMagnitude = atomData[i][8], elementObj = elObj)
+                    
+                    
+        
+        ##Create a Magnetic Cell
+        ##self.MagCell = MagneticCell(unitcell, magNa, magNb, magNc, spaceGroup)
+        ##Using Cutoff Cell as MagCell
+        #self.MagCell = MagneticCell(unitcell, cutNa, cutNb, cutNc, spaceGroup)
+        
+        ##Regenerate Bonds as well
+        #self.changeBonds(self.bondTable.data, notifyGUI)
     
     
     def openCif(self, filename):
@@ -336,14 +511,15 @@ class Session():
         unitcell = Cell(spaceGroup, 0,0,0, a, b, c, alpha, gamma, beta)
         
         atomLabels = data['_atom_site_label']
-    #Not Currently used        atomType = data['_atom_site_type_symbol']
+        atomSymbol = data['_atom_site_type_symbol']
         xPositions = data['_atom_site_fract_x']
         yPositions = data['_atom_site_fract_y']
         zPositions = data['_atom_site_fract_z']
         
         atoms = [] #for the cell window
         for i in range(len(atomLabels)):
-            unitcell.generateAtoms((float(xPositions[i]), float(yPositions[i]), float(zPositions[i])), atomLabels[i])
+            #unitcell.generateAtoms((float(xPositions[i]), float(yPositions[i]), float(zPositions[i])), atomLabels[i])
+
             aData = [atomLabels[i], 0, float(xPositions[i]), float(yPositions[i]), float(zPositions[i])]
             #--Added to atomData: single ion anisotropy, spin magnitude, valence
             aData.append(0.0)#Dx
@@ -367,7 +543,11 @@ class Session():
         Nb = 1
         Nc = 1
         
-        self.cellChange(spaceGroupInt, a, b, c, alpha, beta, gamma, magNa = Na, magNb = Nb, magNc = Nc, cutNa = Na, cutNb = Nb, cutNc = Nc, atomData = atoms)
+        #self.cellChange(spaceGroupInt, a, b, c, alpha, beta, gamma, magNa = Na, magNb = Nb, magNc = Nc, cutNa = Na, cutNb = Nb, cutNc = Nc, atomData = atoms)
+        self.updateCell(spaceGroupInt, a, b, c, alpha, beta, gamma, magNa = Na, magNb = Nb, magNc = Nc, cutNa = Na, cutNb = Nb, cutNc = Nc, atomData = atoms)
+        self.refreshGUI()
+        
+        
         #send signal to the cell window to show the info that has been loaded and to vtkWindow to draw it
         n =  self.atomTable.GetNumberRows()
         for i in range(n):
@@ -375,10 +555,144 @@ class Session():
         send(signal = "File Load", sender = "Session", spaceGroup = spaceGroupInt, a = a, b = b, c = c, alpha = alpha, beta = beta, gamma = gamma, magNa = Na, magNb = Nb, magNc = Nc, cutNa = Na, cutNb = Nb, cutNc = Nc)
         
         
+    def openFullProfFile(self, filename):
+        """This will open a FullProf Studio file (.fst)"""
+        handle = open(filename)
+        lines = handle.readlines()
+        handle.close()
+        atoms = []
+        bonds = []
+        conns = []
+        for line in lines:
+            if line[0:4] == "CELL":
+                #format of line: CELL a b c alpha beta gamma
+                vals = line.split()
+                print vals
+                a = float(vals[1])
+                b = float(vals[2])
+                c = float(vals[3])
+                alpha = float(vals[4])
+                gamma = float(vals[5])
+                beta = float(vals[6])
+            elif line[0:6] == "SPACEG":
+                #this is the space group in Hermann-Mauguin notation.
+                hm_spacegroup = (line[6:]).strip().upper()
+                space_group = GetSpaceGroup(hm_spacegroup)
+            elif line[0:3] == "BOX":
+                #Format: xmin xmax ymin ymax zmin zmax
+                #In this program, however, xmin, ymin, zmin = 0,0,0 always.
+                vals = line.split()
+                a_diff = float(vals[2]) - float(vals[1])
+                b_diff = float(vals[4]) - float(vals[3])
+                c_diff = float(vals[6]) - float(vals[5])
+                a_cutoff = int(a_diff)
+                b_cutoff = int(b_diff)
+                c_cutoff = int(c_diff)
+                if a_diff - a_cutoff > 0:
+                    a_cutoff += 1
+                if b_diff - b_cutoff > 0:
+                    b_cutoff += 1
+                if c_diff - c_cutoff > 0:
+                    c_cutoff += 1
+            elif line[0:4] == "ATOM":
+                vals = line.split()
+                label = vals[1]
+                symbol = vals[2]
+                a_coord = float(vals[3])
+                b_coord = float(vals[4])
+                c_coord = float(vals[5])
+                position = (a_coord, b_coord, c_coord)
+                #Get the radius which is right after the word "RADIUS"
+                for i in range(len(vals)):
+                    if vals[i] == "RADIUS":
+                        radius = float(vals[i+1])
+                        break
+                else:
+                    radius = None
+                #Get the color which is right after the word "COLOR"
+                for i in range(len(vals)):
+                    if vals[i] == "COLOR":
+                        color = [float(vals[i+1]), float(vals[i+2]), float(vals[i+3])]
+                        break
+                else:
+                    color = None
+                #atomData format (each line):
+                #label massNum aPos bPos cPos anisotropy_a anisotropy_b anistropy_c spin valence
+                atoms.append([label, symbol, position, radius, color])
+            elif line[0:4] == "BOND":
+                #Format: BOND label1 label2 min_dist max_dist RADIUS rad COLOR r g b t
+                #The color and radius need not be there and will be ignored for now since
+                #the color and radius of bonds is hardcoded in right now.
+                vals = line.split()
+                bonds.append([vals[1], vals[2], vals[3], vals[4]])
+            elif line[0:4] == "CONN":
+                #Format: BOND symbol1 symbol2 min_dist max_dist RADIUS rad COLOR r g b t
+                #The color and radius need not be there and will be ignored for now since
+                #the color and radius of bonds is hardcoded in right now.
+                vals = line.split()
+                conns.append([vals[1], vals[2], vals[3], vals[4]])
+                
+        
+        self.newCell(space_group.number, a, b, c, alpha, beta, gamma, 1, 1, 1,
+                     a_cutoff, b_cutoff, c_cutoff)
+        
+        for atom in atoms:
+            #FPStudio does not seem to support isotopes
+            massNum = None
+            self.addAtom(atom[1], atom[2], massNum = massNum, radius = atom[3], rgb = atom[4])
+            
+        for bond in bonds:
+            self.createBonds(label1 = bonds[0], label2 = bonds[1],
+                             minDist = bonds[2], maxDist = bonds[3])
+        for conn in conns:
+            self.createBonds(symbol1 = conns[0], symbol2 = conns[1],
+                             minDist = conns[2], maxDist = conns[3])
+            
+        self.refreshGUI()
+        #self.cellChange(space_group.number, a, b, c, alpha, beta, gamma, magNa = 1, magNb = 1, magNc = 1, cutNa = a_cutoff, cutNb = b_cutoff, cutNc = c_cutoff, atomData = atoms)
+        #self.updateCell(space_group.number, a, b, c, alpha, beta, gamma, magNa = 1, magNb = 1, magNc = 1, cutNa = a_cutoff, cutNb = b_cutoff, cutNc = c_cutoff, atomData = atoms)
+        #self.refreshGUI()
+        
+        #send signal to the cell window to show the info that has been loaded and to vtkWindow to draw it
+        send(signal = "File Load", sender = "Session",
+             spaceGroup = space_group.number, a = a, b = b, c = c,
+             alpha = alpha, beta = beta, gamma = gamma, magNa = a_cutoff,
+             magNb = b_cutoff, magNc = c_cutoff, cutNa = a_cutoff,
+             cutNb = b_cutoff, cutNc = c_cutoff)
+        
+               
+            #TODO:  use these values extracted.  You could combine the three file opening functions.
+            #Each function would have to extract values form it's format and then a single function
+            #could be used for all three to construct the model from the extracted values.e
+                
 
-        #set the values in the tables
-#        self.atomTable.SetValue(i, 0, atomData)
-
+    def createBonds(self, minDist, maxDist, label1 = None, label2 = None,
+                    symbol1 = None, symbol2 = None):
+        """Creates bonds between atoms at the right distance apart.
+        
+        Either symbol1 and symbol 2 must be supplied, or label1 and label2.  A
+        bond will be created between all atoms whose seperation is between
+        minDist and maxDist if one has label1 and the other label2, or one has
+        element symbol1, and the other symbol2."""
+        #This is not as efficient as it could be, since symmetry equivalent
+        #bonds will be checked.  Only atoms in the first cell and surrounding
+        #cell need to be checked.
+        if symbol1 != None and symbol2 != None:
+            for a1 in self.MagCell.getAllAtoms():
+                for a2 in self.MagCell.getAllAtoms():
+                    if a1.getSymbol() == symbol1 and a2.getSymbol() == symbol2:
+                        self.addBond(atom1 = a1, atom2 = a2)
+                        return
+        if label1 != None and label2 != None:
+            for a1 in self.MagCell.getAllAtoms():
+                for a2 in self.MagCell.getAllAtoms():
+                    if a1.getDescription() == symbol1:
+                        if a2.getDescription() == symbol2:
+                            self.addBond(atom1 = a1, atom2 = a2)
+                            return
+                        
+                
+    
     def saveSessionToXML(self, filename):
         """Saves all the information needed to reconstruct the model in an xml file."""
         xmlStr = self.createXMLStr()
@@ -481,7 +795,7 @@ class Session():
         xmlStr = doc.toprettyxml("    ")
         return xmlStr
        
-    #Not used by me, but may be useful for other people, should add this to GUi  
+    #Not used by me, but may be useful for other people, should add this to GUI  
     def export(self, filename):
         """Exports the bond information to a file."""
         size = 10
@@ -501,7 +815,7 @@ class Session():
 #                        z = pos[2] + (k * self.getCutoffCell().getNa())
 #                        line = str(num) + " " + str(x) + " " + str(y) + " " + str(z)
 #                        file.write(line + "\n")
-        #Right now this will be extremely slow (8 nested for lops)       
+        #Right now this will be extremely slow (8 nested for loops)       
         class SimpleBond():
             def __init__(self, pos1, pos2, jMatrix):
                 self.pos1 = pos1
@@ -713,8 +1027,11 @@ class Session():
         the Simulated Annealing.
 
         #AtomNumber AtomPosition(X Y Z) Anisotropy(X Y Z) OtherIndex Jmatrix OtherIndex Jmatrix..."""
-#        size = 2
-        
+        #DO NOT MAKE THE SIZE LESS THAN 3.  The implementation depends on it.  Particulary the
+        #validBond method, but the dispersion and cross section code is also built around this.
+        if size < 3:
+            size = 3
+            
         timer = Timer()
         matrices, allAtoms = self.Export_Aux(size)  
         timer.printTime()
@@ -790,11 +1107,13 @@ class Session():
         
         
         #print out the simple atom list
-        file.write("#AtomNumber Label CellNumber AtomicNumber  Valence InFirstInteractionCell AtomPosition(X Y Z) Anisotropy(X Y Z) SpinMagnitude OtherIndex Jmatrix OtherIndex Jmatrix...\n")
+        file.write("#AtomNumber Symbol CellNumber MassNumber  Valence InFirstInteractionCell AtomPosition(X Y Z) Anisotropy(X Y Z) SpinMagnitude OtherIndex Jmatrix OtherIndex Jmatrix...\n")
         for atomIndex in range(len(allAtoms)):
             atom = allAtoms[atomIndex]
             atomStr = str(atomIndex) + " " + str(atom.label) + " " + str(atom.cellNum)
-            atomStr += " " + str(atom.atomicNum) + " " + str(atom.valence)
+            atomStr += " " + str(atom.massNum) + " " + str(atom.valence)
+            if atom.valence == "":
+                atomStr += "_"
             atomStr += " " + inInteractionCellStr(allAtoms, atom)
             atomStr += " " + str(atom.pos[0]) + " " + str(atom.pos[1]) + " " + str(atom.pos[2])
             atomStr += " " + str(atom.anisotropy[0]) + " " + str(atom.anisotropy[1]) + " " + str(atom.anisotropy[2])
@@ -842,7 +1161,7 @@ class Session():
         Nc = self.getCutoffCell().getNc()
         
         class SimpleAtom():
-            def __init__(self, pos, anisotropy, spinMag, label, atomicNum, cellNum, valence):
+            def __init__(self, pos, anisotropy, spinMag, label, massNum, cellNum, valence):
                 self.anisotropy = anisotropy
                 self.pos = pos
 #                self.cellPos = []
@@ -854,9 +1173,11 @@ class Session():
                 #self.interactions[position of other atom] = j number
                 self.spinMag = spinMag
                 self.label = label
-                self.atomicNum = atomicNum
+                self.massNum = massNum
                 self.cellNum = cellNum
-                self.valence = string.join(valence.split(), "")#just in case, get rid of whitespace
+                #valence is an int, not str
+                #self.valence = string.join(valence.split(), "")#just in case, get rid of whitespace
+                self.valence = valence
                 
             #might want to change this to position later when all atoms wont be created in same list
             def addInteraction(self, atom2, jMat):
@@ -977,17 +1298,21 @@ class Session():
             anisotropy2 = bond.anisotropy2
             spin1 = bond.spinMag1
             spin2 = bond.spinMag2
-            #--Adding labels, cell number, valence, and atomic number----
+            #--Adding labels, cell number, valence, and mass number----
             a1 = self.MagCell.atomAtPosition(pos1)
             a2 = self.MagCell.atomAtPosition(pos2)
-            label1 = a1.description
-            label2 = a2.description
-            cellNum1 = a1.getIndexNumber()
-            cellNum2 = a2.getIndexNumber()
-            atomicNum1 = a1.atomicNumber
-            atomicNum2 = a2.atomicNumber
-            valence1 = a1.valence
-            valence2 = a2.valence
+            #label1 = a1.description
+            #label2 = a2.description
+            label1 = a1.getSymbol()
+            label2 = a2.getSymbol()
+            #cellNum1 = a1.getIndexNumber()
+            #cellNum2 = a2.getIndexNumber()
+            cellNum1 = a1.getIDNum()
+            cellNum2 = a2.getIDNum()
+            massNum1 = a1.getMassNum()
+            massNum2 = a2.getMassNum()
+            valence1 = a1.getValence()
+            valence2 = a2.getValence()
             #---------------------------------------------------
             jMatInt = bond.jMatrix
             for i in range(2):
@@ -1017,10 +1342,10 @@ class Session():
                                         if PosInFirstCutoff(newPos1) and PosInFirstCutoff(newPos2):
                                             #Both are in first cutoff
                                             #Add the atoms to the list of atoms within the first cell
-                                            newAtom1 = SimpleAtom(newPos1, anisotropy1, spin1, label1, atomicNum1, cellNum1, valence1)
+                                            newAtom1 = SimpleAtom(newPos1, anisotropy1, spin1, label1, massNum1, cellNum1, valence1)
                                             if not atomListContains(cellAtoms, newAtom1):
                                                 cellAtoms.append(newAtom1)
-                                            newAtom2 = SimpleAtom(newPos2, anisotropy2, spin2, label2, atomicNum2, cellNum2, valence2)
+                                            newAtom2 = SimpleAtom(newPos2, anisotropy2, spin2, label2, massNum2, cellNum2, valence2)
                                             if not atomListContains(cellAtoms, newAtom2):
                                                 cellAtoms.append(newAtom2)
                                             #Add the bond to bonds within the cell
@@ -1036,13 +1361,23 @@ class Session():
                                             transPos1 = translateToFirstCutoffCell(newPos1)
                                             transPos2 = translateToFirstCutoffCell(newPos2)
                                             
-                                            newAtom1 = SimpleAtom(transPos1, anisotropy1, spin1, label1, atomicNum1, cellNum1, valence1)
-                                            newAtom2 = SimpleAtom(transPos2, anisotropy2, spin2, label2, atomicNum2, cellNum2, valence2)
+                                            newAtom1 = SimpleAtom(transPos1, anisotropy1, spin1, label1, massNum1, cellNum1, valence1)
+                                            newAtom2 = SimpleAtom(transPos2, anisotropy2, spin2, label2, massNum2, cellNum2, valence2)
                                             if not atomListContains(cellAtoms, newAtom1):
                                                 cellAtoms.append(newAtom1)
                                             if not atomListContains(cellAtoms, newAtom2):
                                                 cellAtoms.append(newAtom2)
                                     
+        print "after iterating through bonds..."
+        print "atoms:"
+        for atom in cellAtoms:
+            print atom.pos
+        print "cellBonds: "
+        for b in cellBonds.list:
+            print b.pos1, " , ", b.pos2
+        print "interCelBbonds: "
+        for b in interCellBonds.list:
+            print b.pos1, " , ", b.pos2
         
         #symmetry equivalent bonds between unit cells will not be represented in
         #the cutoff cell if the cutoff cell is only one unit cell wide in any
@@ -1070,7 +1405,7 @@ class Session():
                         #translations of intercellular bonds are represented.
                         
     
-                        #iterate through eachtranslation and check if there are atoms there that could
+                        #iterate through each translation and check if there are atoms there that could
                         #be bonded; if so, add the bond
                         for i in range(0, 2): #translate in x direction (Na - Cell X position) times
                             for j in range(0, 2): #translate in y direction (Nb - Cell Y position) times
@@ -1092,13 +1427,13 @@ class Session():
                                         atomObj1 = self.MagCell.atomAtPosition(translatedPos1)
                                         atomObj2 = self.MagCell.atomAtPosition(translatedPos2)
                                         if(atomObj1 != None):#Add the atom if it is in the cutoff cell
-                                            newAtom1 = SimpleAtom(translatedPos1, atomObj1.anisotropy, atomObj1.spinMagnitude, atomObj1.description, atomObj1.atomicNumber, atomObj1.getIndexNumber(), atomObj1.valence)
+                                            newAtom1 = SimpleAtom(translatedPos1, atomObj1.anisotropy, atomObj1.spinMagnitude, atomObj1.description, atomObj1.getMassNum(), atomObj1.getIDNum(), atomObj1.valence)
                                         #Add atom if there is not already an atom at that position
                                         if not atomListContains(cellAtoms, newAtom1):
                                             cellAtoms.append(newAtom1)
                                         
                                         if(atomObj2 != None):#Add the atom if it is in the cutoff cell
-                                            newAtom1 = SimpleAtom(translatedPos2, atomObj2.anisotropy, atomObj2.spinMagnitude, atomObj2.description, atomObj2.atomicNumber, atomObj2.getIndexNumber(), atomObj2.valence)
+                                            newAtom2 = SimpleAtom(translatedPos2, atomObj2.anisotropy, atomObj2.spinMagnitude, atomObj2.description, atomObj2.getMassNum(), atomObj2.getIDNum(), atomObj2.valence)
                                         #Add atom if there is not already an atom at that position
                                         if not atomListContains(cellAtoms, newAtom2):
                                             cellAtoms.append(newAtom2)
@@ -1109,7 +1444,16 @@ class Session():
                                                 interCellBonds.addBond(SimpleBond(translatedPos1, translatedPos2, bond.jMatrix, None, None, None, None))
                                         
                                         
-        
+        print "after iterating through symops..."
+        print "atoms:"
+        for atom in cellAtoms:
+            print atom.pos
+        print "cellBonds: "
+        for b in cellBonds.list:
+            print b.pos1, " , ", b.pos2
+        print "interCelBbonds: "
+        for b in interCellBonds.list:
+            print b.pos1, " , ", b.pos2
         allAtoms = []
         numAtomsPerCell = len(cellAtoms)
         
@@ -1124,7 +1468,7 @@ class Session():
                         x = pos[0] + (Na * i)
                         y = pos[1] + (Nb * j)
                         z = pos[2] + (Nc * k)
-                        newAtom = SimpleAtom((x,y,z), anisotropy, cellAtoms[index].spinMag, cellAtoms[index].label, cellAtoms[index].atomicNum, cellAtoms[index].cellNum, cellAtoms[index].valence)
+                        newAtom = SimpleAtom((x,y,z), anisotropy, cellAtoms[index].spinMag, cellAtoms[index].label, cellAtoms[index].massNum, cellAtoms[index].cellNum, cellAtoms[index].valence)
 #                        print (len(allAtoms)%numAtomsPerCell == index)#just a check, should always be true
                         allAtoms.append(newAtom)
 
@@ -1183,6 +1527,7 @@ class Session():
         for bond in interCellBonds.list:
             pos1 = bond.pos1
             pos2 = bond.pos2
+            print "processing intercell bond: ", pos1, " , ", pos2
             pos1Index = -1
             pos2Index = -1
             for i in range(len(allAtoms)):
@@ -1210,6 +1555,7 @@ class Session():
                 direction = bondDirection(pos1, pos2)
                 allAtoms[pos1Index].addInterCellInteraction(pos2Index, bond.jMatrix, direction)
                 allAtoms[pos2Index].addInterCellInteraction(pos1Index, bond.jMatrix, direction)
+                print "adding interaction between atom ", pos1Index, " and atom ", pos2Index
         
         
         
@@ -1217,20 +1563,71 @@ class Session():
         print"translating..."
         
         def validBond(index1, index2, direction):
-            #print "valid bond: ", index1, " , ", index2, direction
+            """1/20/11 I beleive the point of this function was to find the interactions that go off
+            the edge of the translated lattice and therefore are invalid.  When the larger lattice is
+            made, it is made by translating the cutoff cell.  So let's say there is an interaction
+            from cell one, to it's neighbo rin the x direction in cell2.  Then we translate in the x
+            direction and get cell three, but then we have gone as far as we need to in the x direction
+            (made by a for loop) and cell 4 is put next to cell one again, with y coordinate incremented.
+            The interaction between cell 3 and cell 4 is invalid becuase they are not next to each other
+            in the x direction.  That is the problem, but this method is not working correctly.
+            To work correctly it needs to check each direction that the bond crosses a cell boundary in 
+            (the direction argument) to see if it would be crossing the edge of the whole translated lattice.
+            
+            Right now it checks if the bond is in a different translated row of cells, but the problem
+            is that legitimate interactions can do this."""
+            #print "?valid bond: ", allAtoms[index1].pos, " , ", allAtoms[index2].pos, direction
             cell1 = index1/numAtomsPerCell
             cell2 = index2/numAtomsPerCell
-            zRow1 = cell1/size#this relies on the list being created in the nested for loop that was used, z within y within x
-            zRow2 = cell2/size
-            if(zRow1 != zRow2 and direction[2]):
-                return False
-            xLayer1 = cell1/(size*size)
-            xLayer2 = cell2/(size*size)
-            if(xLayer1 != xLayer2 and direction[1]):
-                return False
-            #shouldn't have to check z, because if it's not valid in z direction, it would be off the list (>len(allAtoms))
-            return True
+            #Find the coordinates of the cell in units of interaction cells
+            posInX1 = int(cell1/(size*size))
+            posInX2 = int(cell1/(size*size))
+            leftover1 = cell1%(size*size)
+            leftover2 = cell2%(size*size)
+            posInY1 = int(leftover1/size)
+            posInY2 = int(leftover2/size)
+            posInZ1 = leftover1%size
+            posInZ2 = leftover2%size
             
+            #Now, a valid interaction can cross an interaction cell boundary in any direction,
+            #but it has a maximum length of one interaction cell.  However, I have made the minimum
+            #size of this larger translated lattice equal to 3*3*3 interaction cells.  Therefore,
+            #when we hit an edge and get in invalid interaction, the cells will be at least 2
+            #interaction cells apart in the direction of the interaction.
+            if(direction[0]):
+                if numpy.abs(posInX1 - posInX2)>1:
+                    #print "false"
+                    return False
+            if(direction[1]):
+                if numpy.abs(posInY1 - posInY2)>1:
+                    #print "false"
+                    return False
+            if(direction[2]):
+                if numpy.abs(posInZ1 - posInZ2)>1:
+                    #print "false"
+                    return False
+            print #"true"
+            return True
+
+            #Old (incorrect) method:
+            if 0:
+                print "?valid bond: ", allAtoms[index1].pos, " , ", allAtoms[index2].pos, direction
+                cell1 = index1/numAtomsPerCell
+                cell2 = index2/numAtomsPerCell
+                zRow1 = cell1/size#this relies on the list being created in the nested for loop that was used, z within y within x
+                zRow2 = cell2/size
+                if(zRow1 != zRow2 and direction[2]):
+                    print "false"
+                    return False
+                xLayer1 = cell1/(size*size)
+                xLayer2 = cell2/(size*size)
+                if(xLayer1 != xLayer2 and direction[1]):
+                    print "false"
+                    return False
+                #shouldn't have to check z, because if it's not valid in z direction, it would be off the list (>len(allAtoms))
+                print "true"
+                return True
+   
         
         #translate bonds contained within the CutoffCell
         for i in range(len(allAtoms)- numAtomsPerCell):
@@ -1265,8 +1662,8 @@ class Session():
                 for interaction in allAtoms[atomIndex].interCellInteractions:
                     for n in range(1, cubeSize - cell):
                         displacement =  numAtomsPerCell*n
-                        if validBond(atomIndex + displacement, interaction[0] + displacement, interaction[2]):
-                            if interaction[0] + displacement < len(allAtoms):
+                        if interaction[0] + displacement < len(allAtoms):
+                            if validBond(atomIndex + displacement, interaction[0] + displacement, interaction[2]):
                                 #Checks for duplicates
                                 allAtoms[atomIndex + displacement].addInterCellInteraction(interaction[0] + displacement, interaction[1], interaction[2])
                         
@@ -1322,13 +1719,7 @@ class Session():
 #        else:
 #            print "Balanced!"
 
-        return matrices, allAtoms
-        
-        
-        
-        
-        
-        
+        return matrices, allAtoms 
       
     def loadSpinFile(self, fileName):
         """Loads the file output from the simulated annealing that lists the spin
@@ -1395,7 +1786,7 @@ class atomTable(wx.grid.PyGridTableBase):
     what is in this table."""
     def __init__(self):
         wx.grid.PyGridTableBase.__init__(self)
-        self.colLabels = ['   Name   ', 'Atomic Number','Valence', '   x   ', '   y   ','   z   ', '  Dx  ', '  Dy  ', '  Dz  ', 'Spin Magnitude']
+        self.colLabels = ['Symbol', "Atomic Number\n  (optional)",'Valence', '   x   ', '   y   ','   z   ', '  Dx  ', '  Dy  ', '  Dz  ', 'Spin Magnitude']
         self.rowLabels=['Atom 1']
         
         self.data = [

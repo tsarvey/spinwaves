@@ -1,3 +1,14 @@
+"""
+Disclaimer
+==========
+
+This software was developed at the National Institute of Standards and Technology at the NIST Center for Neutron Research by employees of the Federal Government in the course of their official duties. Pursuant to title 17 section 105* of the United States Code this software is not subject to copyright protection and is in the public domain. The SPINAL software package is an experimental spinwave analysis system. NIST assumes no responsibility whatsoever for its use, and makes no guarantees, expressed or implied, about its quality, reliability, or any other characteristic. The use of certain trade names or commercial products does not imply any endorsement of a particular product, nor does it imply that the named product is necessarily the best product for the stated purpose. We would appreciate acknowledgment if the software is used.
+
+*Subject matter of copyright: United States Government works
+
+Copyright protection under this title is not available for any work of the United States Government, but the United States Government is not precluded from receiving and holding copyrights transferred to it by assignment, bequest, or otherwise."""
+
+
 from math import sqrt
 import numpy as N
 import solvespin
@@ -10,7 +21,7 @@ class atom:
                                             [0, 0, 1]]),
                 spinMag = 1, pos=[0,0,0],neighbors=None,interactions=None,
                 label=0,Dx=0,Dy=0,Dz=0,cell=0,int_cell=[], orig_Index = None,
-                spin = None, valence = 0, atomicNum = 0):
+                spin = None, valence = 0, massNum = 0):
         self.spinRmatrix=spinRmatrix#found with findmat
         if neighbors==None:
             neighbors=[]
@@ -29,7 +40,7 @@ class atom:
         self.origIndex = orig_Index
         self.spinMagnitude = spinMag
         self.valence = valence
-        self.atomicNum = atomicNum
+        self.massNum = massNum
         self.spin = spin
 
 
@@ -44,12 +55,24 @@ def get_tokenized_line(myfile,returnline=['']):
         return tokenized
 
 
-def readFiles(interactionFileStr,spinFileStr, allAtoms=False):
+def readFiles(interactionFileStr,spinFileStr, allAtoms=False, rtn_cutOffInfo = False):
     """modified from read_interactions.  Originally this(read_interactions) read
     in the atoms from the interaction file and matched the spin rotation
     matrices with the appropriate atoms based on indices.  Now it takes the
     interaction and spin file strings, reads in the atom information and matches
-    it with spin rotation matrices based on coordinates"""
+    it with spin rotation matrices based on coordinates
+    
+    If rtn_cutOffInfo is true, the number of atoms in the cutoffcell will be returned
+    and the size of the cutoff cell will be returned
+    as np.array([Na,Nb,Nc]).  The list of atoms will also contain all atoms in the file,
+    not just those in the first cutoff cell (for now).  In the future I should only return
+    the atoms which bond with the atoms in the interaction cell.  The reason it works this way
+    is that the atoms marked with an X in the file are the atos that are in the first crystallographic
+    unit cell and the atos that bond to atoms in the first crystallographic unit cell, so now I 
+    cannot use that X as an indicator."""
+    
+    if rtn_cutOffInfo:
+        allAtoms = True
     #print interactionFileStr
     interactionFile = open(interactionFileStr, 'r')
     myFlag=True
@@ -84,7 +107,7 @@ def readFiles(interactionFileStr,spinFileStr, allAtoms=False):
                     break
                 if tokenized[0]!='#atomnumber':
                     #print tokenized[0]
-                    jnum=float(tokenized[0])
+                    jnum=int(tokenized[0])
                     j11=float(tokenized[1])
                     j12=float(tokenized[2])
                     j13=float(tokenized[3])
@@ -115,9 +138,13 @@ def readFiles(interactionFileStr,spinFileStr, allAtoms=False):
                             #spin0=N.matrix([[1,0,0],[0,1,0],[0,0,1]],'float64')
                             spinMagnitude = float(tokenized[12])
                             valence = int(tokenized[4])
-                            atomicNum = int(tokenized[3])
+                            if tokenized[3] != 'None' and tokenized[3] != 'none':
+                                massNum = int(tokenized[3])
+                            else:
+                                massNum = None
+                            label = tokenized[1].capitalize()
                             pos0=[x,y,z]
-                            atom0=atom(spinMag=spinMagnitude, pos=pos0,Dx=Dx,Dy=Dy,Dz=Dz, orig_Index = atom_num, valence = valence, atomicNum = atomicNum)
+                            atom0=atom(spinMag=spinMagnitude, pos=pos0,label = label, Dx=Dx,Dy=Dy,Dz=Dz, orig_Index = atom_num, valence = valence, massNum = massNum)
                             neighbors=[]
                             interactions=[]
                             for i in range(13,len(tokenized),2):
@@ -146,6 +173,18 @@ def readFiles(interactionFileStr,spinFileStr, allAtoms=False):
                 if atom.pos[2] >= Nc and atom.pos[2] < (Nc + 1):
                     return True
         return False
+    
+    #1/11/11
+    #I need to loop through the atoms in the cutoff cell for McQueeny's algorithm
+    def inCutoffCell(atom):
+        if atom.pos[0] >= Na and atom.pos[0] < 2*Na:
+            if atom.pos[1] >= Nb and atom.pos[1] < 2*Nb:
+                if atom.pos[2] >= Nc and atom.pos[2] < 2*Nc:
+                    return True
+        return False
+        
+    numCutOff = 0
+        
         
     #Add atoms in desired cell to the beginning of the new list
     newAtomList = []
@@ -155,11 +194,25 @@ def readFiles(interactionFileStr,spinFileStr, allAtoms=False):
     #for i in range(len(atomlist)):
         if inDesiredCell(atomlist[i]):
             numcell += 1
+            numCutOff += 1
             newAtomList.append(atomlist.pop(i))
         else:
             i=i+1
         if i==len(atomlist):
             Flag=False
+    
+    #Add atoms in cutoff cell to the list
+    Flag=True
+    i=0
+    if len(atomlist) > 0:
+        while Flag:
+            if inCutoffCell(atomlist[i]):
+                numCutOff += 1
+                newAtomList.append(atomlist.pop(i))
+            else:
+                i=i+1
+            if i==len(atomlist):
+                Flag=False
     
     #Add remaining atoms to the new list
     for i in range(len(atomlist)):
@@ -241,6 +294,8 @@ def readFiles(interactionFileStr,spinFileStr, allAtoms=False):
     #for spin in spins:
     #    print spin
     #print "numSpins: ", len(spins)
+    if rtn_cutOffInfo:
+        return atomlist, jnums, jmats, numcell, numCutOff, N.array([Na,Nb,Nc])
     return atomlist, jnums, jmats, numcell
     
 

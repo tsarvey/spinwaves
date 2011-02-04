@@ -1,3 +1,14 @@
+"""
+Disclaimer
+==========
+
+This software was developed at the National Institute of Standards and Technology at the NIST Center for Neutron Research by employees of the Federal Government in the course of their official duties. Pursuant to title 17 section 105* of the United States Code this software is not subject to copyright protection and is in the public domain. The SPINAL software package is an experimental spinwave analysis system. NIST assumes no responsibility whatsoever for its use, and makes no guarantees, expressed or implied, about its quality, reliability, or any other characteristic. The use of certain trade names or commercial products does not imply any endorsement of a particular product, nor does it imply that the named product is necessarily the best product for the stated purpose. We would appreciate acknowledgment if the software is used.
+
+*Subject matter of copyright: United States Government works
+
+Copyright protection under this title is not available for any work of the United States Government, but the United States Government is not precluded from receiving and holding copyrights transferred to it by assignment, bequest, or otherwise."""
+
+import vtk
 from vtk import *
 import scipy
 import math
@@ -13,14 +24,16 @@ class vtkDrawer():
     
     
     #Default Sphere resolution
-    default_Sphere_Res = 20
-    defaultBondRadius = .025
+    default_Sphere_Res = 30
+    defaultBondRadius = .02
     
     
     def getObjFromActor(self, actor):
         """Given actor, this method returns the object that that actor was
         createdto represent."""
-        return self.actors[actor]
+        if actor != None:
+            return self.actors[actor]
+        return None
     
     
     def drawAtom(self, atom):
@@ -42,7 +55,8 @@ class vtkDrawer():
         sphere_Actor.SetMapper(sphereMap)
         sphere_Actor.GetProperty().SetColor(atom.getColor())
             
-        sphere_Actor.SetPosition(atom.getPosition())
+        #sphere_Actor.SetPosition(atom.getPosition())
+        sphere_Actor.SetPosition(atom.getRealPosition())
         
         self.ren1.AddActor(sphere_Actor)
         
@@ -59,7 +73,7 @@ class vtkDrawer():
     
             #Arrows have a set length, so a transform is used to change their size
             aTransform = vtkTransform()
-            aTransform.Scale(.2,.2,.2)
+            aTransform.Scale(.25,.25,.25)
             transform = vtkTransformPolyDataFilter()
             transform.SetTransform(aTransform)
             transform.SetInputConnection(arrowSource.GetOutputPort())
@@ -70,8 +84,6 @@ class vtkDrawer():
             #Create the arrow actor
             arrowActor = vtkLODActor()
             arrowActor.SetMapper(arrowMap)
-            arrowActor.SetPosition(atom.getPosition())
-            arrowActor.GetProperty().SetColor((1,0,0))
             
             
             #Spin Vector
@@ -84,6 +96,13 @@ class vtkDrawer():
             unitX = x/vectLength
             unitY = y/vectLength
             unitZ = z/vectLength
+            
+            position = list(atom.getRealPosition())
+            position[0] += unitX*atom.getRadius()
+            position[1] += unitY*atom.getRadius()
+            position[2] += unitZ*atom.getRadius()
+            arrowActor.SetPosition(position)
+            arrowActor.GetProperty().SetColor((1,0,0))
             
 
             #In vtk, we start with an arrow actor pointed along the x axis.
@@ -114,11 +133,11 @@ class vtkDrawer():
     
     def drawBond(self, bond):
         """Creates a cylinder actor connecting the surfaces of the two atoms."""
-        cylinder = self.makeCylinder(bond.getAtom1().getPosition(), bond.getAtom2().getPosition(), bond.getAtom1().getRadius(), bond.getAtom2().getRadius())
+        cylinder = self.makeCylinder(bond.getAtom1().getRealPosition(), bond.getAtom2().getRealPosition(), bond.getAtom1().getRadius(), bond.getAtom2().getRadius(), bond.getAtom1().getUnitCell())
         self.actors[cylinder] = bond
         self.ren1.AddActor(cylinder)
 
-    def makeCylinder (self, posOne, posTwo, rad_One, rad_Two):
+    def makeCylinder (self, posOne, posTwo, rad_One, rad_Two, unitCell):
         """returns a cylindrical Actor to represent a bond
         
         PosOne and PosTwo are the positions of the two spherical actors
@@ -147,7 +166,18 @@ class vtkDrawer():
         aCylinder = vtkLODActor()
         aCylinder.SetMapper(cylinderMap)
         aCylinder.GetProperty().SetColor(0, .1, .6)
-        aCylinder.SetScale(.2, distance, .2)
+        #aCylinder.SetScale(.2, distance, .2)
+        
+        #Arbitrary way of scaling the cylinder to the cell size
+        smallestDim = unitCell.getA()
+        b = unitCell.getB()
+        c = unitCell.getC()
+        if smallestDim > b:
+            smallestDim = b
+        if smallestDim > c:
+            smallestDim = c
+        scale = smallestDim/4
+        aCylinder.SetScale(scale, distance, scale)
 
         
         #to get the center point between the surfaces of the two spheres
@@ -209,9 +239,12 @@ class vtkDrawer():
 
         #Create "Cube" Source
         box = vtkCubeSource()
-        box.SetXLength(1)
-        box.SetYLength(1)
-        box.SetZLength(1)
+        #box.SetXLength(1)
+        #box.SetYLength(1)
+        #box.SetZLength(1)
+        box.SetXLength(cell.getA())
+        box.SetYLength(cell.getB())
+        box.SetZLength(cell.getC())
         
         boxMap = vtkPolyDataMapper()
         boxMap.SetInput(box.GetOutput())
@@ -222,7 +255,11 @@ class vtkDrawer():
         abox.GetProperty().SetColor(0, .1, .6)
         abox.GetProperty().SetOpacity(.1)
         a, b, c = cell.getPosition()
-        abox.SetPosition(a + .5, b + .5, c + .5)
+        a = (a + .5)*cell.getA()
+        b = (b + .5)*cell.getB()
+        c = (c + .5)*cell.getC()
+        abox.SetPosition(a,b,c)
+        #abox.SetPosition(a + .5, b + .5, c + .5)
         abox.PickableOff()
         
         #Add the actor to the renderer 
@@ -237,32 +274,40 @@ class vtkDrawer():
     def labelAtoms(self, magneticCell):
         """Creates number labels on the +x side of the sphere.
         The labels are the atom indices within the crystallographic unit cell."""
-        for cell in magneticCell.getAllUnitCells():
-            AtomList = cell.getAtoms()
-            for index in range(0, len(AtomList)):
-                atom = AtomList[index]
-                label = vtkVectorText()
-                #print 'description: ', atom.description
-                label.SetText(atom.description + " " + str(index + 1))
-                labelMapper = vtkPolyDataMapper()
-                labelMapper.SetInputConnection(label.GetOutputPort())
-                labelActor = vtkFollower()
-                labelActor.SetMapper(labelMapper)
-                labelActor.SetScale(0.05, 0.05, 0.05)
-                x, y, z = atom.getPosition()
-                x += atom.getRadius()  #display the label on the +x side of sphere
-                labelActor.AddPosition(x, y, z)
-                labelActor.GetProperty().SetColor(0, 0, 0)
-    
-                self.ren1.AddActor(labelActor)
-
-                #Getting the camera before the image has been rendered will make
-                #it focus on the origin, so we want to recenter it after this.
-                labelActor.SetCamera(self.ren1.GetActiveCamera())
-
-                self.ren1.ResetCamera()
-                
-        
+        #for cell in magneticCell.getAllUnitCells():
+            #AtomList = cell.getAtoms()
+            #for index in range(0, len(AtomList)):
+                #atom = AtomList[index]
+        for atom in magneticCell.getAllAtoms():
+            label = vtkVectorText()
+            #print 'description: ', atom.description
+            idNum = atom.getIDNum()
+            label.SetText(atom.description + " " + str(idNum))
+            labelMapper = vtkPolyDataMapper()
+            labelMapper.SetInputConnection(label.GetOutputPort())
+            labelActor = vtkFollower()
+            labelActor.SetMapper(labelMapper)
+            #labelActor.SetScale(0.05, 0.05, 0.05)
+            #Arbitrary function for scaling label sizes
+            scale = atom.getRadius()/15.0
+            scale += atom.getUnitCell().getA()/90.0
+            scale += atom.getUnitCell().getB()/90.0
+            scale += atom.getUnitCell().getC()/90.0
+            labelActor.SetScale(scale, scale, scale)
+            x, y, z = atom.getRealPosition()
+            x += atom.getRadius()  #display the label on the +x side of sphere
+            labelActor.AddPosition(x, y, z)
+            labelActor.GetProperty().SetColor(0, 0, 0)
+            
+            self.ren1.AddActor(labelActor)
+            
+            #Getting the camera before the image has been rendered will make
+            #it focus on the origin, so we want to recenter it after this.
+            labelActor.SetCamera(self.ren1.GetActiveCamera())
+            
+            self.ren1.ResetCamera()
+                    
+            
     
     def drawMagneticCell(self, MagCell):
         """Draws each crystallographic unit cell in the magnetic cell as well as
@@ -286,19 +331,30 @@ class vtkDrawer():
         
         #Add Axes
         axes = vtkAxes()
-        axes.SetOrigin(0, 0, 0)
-        axesMapper = vtkPolyDataMapper()
-        axesMapper.SetInputConnection(axes.GetOutputPort())
+        axes.SetOrigin(-0.1, 0, -0.1)
+        axes.SetScaleFactor(1.0)
+#        axesMapper = vtkPolyDataMapper()
+#        axesMapper.SetInputConnection(axes.GetOutputPort())
+
+        axesTubes = vtk.vtkTubeFilter()
+        axesTubes.SetInputConnection(axes.GetOutputPort())
+        axesTubes.SetRadius(axes.GetScaleFactor()/50.0)
+        axesTubes.SetNumberOfSides(8)
+        
+        axesMapper = vtk.vtkPolyDataMapper()
+        axesMapper.SetInputConnection(axesTubes.GetOutputPort())
+
         axesActor = vtkLODActor()
         axesActor.PickableOff()
         axesActor.SetMapper(axesMapper)
         self.ren1.AddActor(axesActor)
+
         xLabel = vtkVectorText()
         yLabel = vtkVectorText()
         zLabel = vtkVectorText()
-        xLabel.SetText("x")
-        yLabel.SetText("y")
-        zLabel.SetText("z")
+        xLabel.SetText("a")
+        yLabel.SetText("b")
+        zLabel.SetText("c")
         xLabelMapper = vtkPolyDataMapper()
         yLabelMapper = vtkPolyDataMapper()
         zLabelMapper = vtkPolyDataMapper()
@@ -311,15 +367,15 @@ class vtkDrawer():
         xLabelActor.SetMapper(xLabelMapper)
         yLabelActor.SetMapper(yLabelMapper)
         zLabelActor.SetMapper(zLabelMapper)
-        xLabelActor.SetScale(0.1, 0.1, 0.1)
-        yLabelActor.SetScale(0.1, 0.1, 0.1)
-        zLabelActor.SetScale(0.1, 0.1, 0.1)
-        xLabelActor.AddPosition(1, 0, 0)
-        yLabelActor.AddPosition(0, 1, 0)
-        zLabelActor.AddPosition(0, 0, 1)
-        xLabelActor.GetProperty().SetColor(0, 0, 0)
-        yLabelActor.GetProperty().SetColor(0, 0, 0)
-        zLabelActor.GetProperty().SetColor(0, 0, 0)
+        xLabelActor.SetScale(0.15, 0.15, 0.15)
+        yLabelActor.SetScale(0.15, 0.15, 0.15)
+        zLabelActor.SetScale(0.15, 0.15, 0.15)
+        xLabelActor.AddPosition(1.0, 0.0, -0.3)
+        yLabelActor.AddPosition(-0.3, 1.0, -0.3)
+        zLabelActor.AddPosition(-0.3, 0.0, 1)
+        xLabelActor.GetProperty().SetColor(0.0, 0.0, 0.0)
+        yLabelActor.GetProperty().SetColor(0.0, 0.0, 0.0)
+        zLabelActor.GetProperty().SetColor(0.0, 0.0, 0.0)
         self.ren1.AddActor(xLabelActor)
         self.ren1.AddActor(yLabelActor)
         self.ren1.AddActor(zLabelActor)

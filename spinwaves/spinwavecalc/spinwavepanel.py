@@ -1,3 +1,14 @@
+"""
+Disclaimer
+==========
+
+This software was developed at the National Institute of Standards and Technology at the NIST Center for Neutron Research by employees of the Federal Government in the course of their official duties. Pursuant to title 17 section 105* of the United States Code this software is not subject to copyright protection and is in the public domain. The SPINAL software package is an experimental spinwave analysis system. NIST assumes no responsibility whatsoever for its use, and makes no guarantees, expressed or implied, about its quality, reliability, or any other characteristic. The use of certain trade names or commercial products does not imply any endorsement of a particular product, nor does it imply that the named product is necessarily the best product for the stated purpose. We would appreciate acknowledgment if the software is used.
+
+*Subject matter of copyright: United States Government works
+
+Copyright protection under this title is not available for any work of the United States Government, but the United States Government is not precluded from receiving and holding copyrights transferred to it by assignment, bequest, or otherwise."""
+
+
 import wx
 #import wxaddons.sized_controls as sc
 import  wx.lib.intctrl
@@ -208,7 +219,7 @@ class SpinwavePanel(wx.Panel):
         defaultDir=confBase.Get().GetPath()
         #defaultDir=wx.ConfigBase.Get().GetPath()
         wildcard="files (*.txt)|*.txt|All files (*.*)|*.*"
-        dlg = wx.FileDialog(
+        int_dlg = wx.FileDialog(
             self, message="Choose an Interaction file",
             defaultDir=defaultDir,
             defaultFile="",
@@ -218,16 +229,10 @@ class SpinwavePanel(wx.Panel):
 
         # Show the dialog and retrieve the user response. If it is the OK response,
         # process the data.
-        if dlg.ShowModal() == wx.ID_OK:
-            # This returns a Python list of files that were selected.
-            paths = dlg.GetPaths()
-            #self.log.WriteText('You selected %d files:' % len(paths))
-            interactionfile=paths[0].encode('ascii')
-            self.int_file_txtCtrl.SetValue(interactionfile)
-            #display in richtextcontrol
-            self.editorWin.loadInteractions(interactionfile)
-
-        dlg.Destroy()
+        if int_dlg.ShowModal() == wx.ID_OK:
+            self.int_file_txtCtrl.SetValue(int_dlg.GetPath())
+            self.editorWin.loadInteractions(int_dlg.GetPath())
+        int_dlg.Destroy()
 
     def OnSpinFileBrowse(self, event): # wxGlade: SpinwavePanel.<event_handler>
         #defaultDir=os.getcwd()
@@ -235,7 +240,7 @@ class SpinwavePanel(wx.Panel):
         confBase.SetStyle(wx.CONFIG_USE_LOCAL_FILE)
         defaultDir=confBase.Get().GetPath()
         wildcard="files (*.txt)|*.txt|All files (*.*)|*.*"
-        dlg = wx.FileDialog(
+        spin_dlg = wx.FileDialog(
             self, message="Choose a spin configuration file",
             defaultDir=defaultDir,
             defaultFile="",
@@ -245,15 +250,10 @@ class SpinwavePanel(wx.Panel):
 
         # Show the dialog and retrieve the user response. If it is the OK response,
         # process the data.
-        if dlg.ShowModal() == wx.ID_OK:
-            # This returns a Python list of files that were selected.
-            paths = dlg.GetPaths()
-            spinfile=paths[0].encode('ascii')
-            self.spin_file_txtCtrl.SetValue(spinfile)
-            #display in richtextcontrol
-            self.editorWin.loadSpins(spinfile)
-        
-        dlg.Destroy()
+        if spin_dlg.ShowModal() == wx.ID_OK:
+            self.spin_file_txtCtrl.SetValue(spin_dlg.GetPath())
+            self.editorWin.loadSpins(spin_dlg.GetPath())
+        spin_dlg.Destroy()
 
     def OnCancel(self, evt):
         """Closes window"""
@@ -266,8 +266,8 @@ class SpinwavePanel(wx.Panel):
         if not failed:
             int_file = self.int_file_txtCtrl.GetValue()
             spin_file = self.spin_file_txtCtrl.GetValue()
-            self.processManager.startAnalyticDispersion(int_file, spin_file)
-            self.processManager.startNumericDispersion(int_file, spin_file, data, kMin*pi, kMax*pi, data['step'])
+            self.processManager.startCalcHsave(int_file, spin_file, data, kMin*pi, kMax*pi, data['step'])
+#            self.processManager.startNumericDispersion(int_file, spin_file, data, kMin*pi, kMax*pi, data['step'])
     
     def Validate(self):
         """Checks that all values are the right type. Any field that is not of the right
@@ -340,6 +340,7 @@ class SpinwavePanel(wx.Panel):
         
 # end of class SpinwavePanel
 
+# THE FOLLOWING CLASS IS DEPRECATED AND WILL THROW ERRORS IF RUN FOR __MAIN__
 #class FormDialog(sc.SizedPanel):
 class FormDialog(wx.Panel):
     def __init__(self, parent, id, procManager):
@@ -514,7 +515,7 @@ class FormDialog(wx.Panel):
         defaultDir=confBase.Get().GetPath()
         #defaultDir=wx.ConfigBase.Get().GetPath()
         wildcard="files (*.txt)|*.txt|All files (*.*)|*.*"
-        dlg = wx.FileDialog(
+        int_dlg = wx.FileDialog(
             self, message="Choose an Interaction file",
             defaultDir=defaultDir,
             defaultFile="",
@@ -524,11 +525,11 @@ class FormDialog(wx.Panel):
 
         # Show the dialog and retrieve the user response. If it is the OK response,
         # process the data.
-        if dlg.ShowModal() == wx.ID_OK:
+        if int_dlg.ShowModal() == wx.ID_OK:
             # This returns a Python list of files that were selected.
             paths = dlg.GetPaths()
             #self.log.WriteText('You selected %d files:' % len(paths))
-            self.interactionfile=paths[0].encode('ascii')
+            self.interactionfile=paths[0]#.encode('ascii')
             self.interactionfilectrl.SetLabel("Interaction File:%s"%(self.interactionfile,))
             #wx.StaticText(FilePane, -1, "CellFile:%s"%(self.groupdata['cellfile'],))
             

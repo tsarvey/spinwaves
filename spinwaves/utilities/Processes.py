@@ -1,3 +1,14 @@
+"""
+Disclaimer
+==========
+
+This software was developed at the National Institute of Standards and Technology at the NIST Center for Neutron Research by employees of the Federal Government in the course of their official duties. Pursuant to title 17 section 105* of the United States Code this software is not subject to copyright protection and is in the public domain. The SPINAL software package is an experimental spinwave analysis system. NIST assumes no responsibility whatsoever for its use, and makes no guarantees, expressed or implied, about its quality, reliability, or any other characteristic. The use of certain trade names or commercial products does not imply any endorsement of a particular product, nor does it imply that the named product is necessarily the best product for the stated purpose. We would appreciate acknowledgment if the software is used.
+
+*Subject matter of copyright: United States Government works
+
+Copyright protection under this title is not available for any work of the United States Government, but the United States Government is not precluded from receiving and holding copyrights transferred to it by assignment, bequest, or otherwise."""
+
+
 import os
 import signal
 from multiprocessing import Process, Queue
@@ -11,7 +22,7 @@ import spinwaves.spinwavecalc.spinwave_calc_file as spinwave_calc_file
 import spinwaves.cross_section.util.printing as printing
 from spinwaves.MonteCarlo.CSim import ShowSimulationFrame
 from spinwaves.vtkModel.wxGUI.Session import Session
-from spinwaves.cross_section.general_case2 import run_cross_section
+from spinwaves.cross_section.csection_calc import cs_driver, load_plot
 from spinwaves.utilities.fitting import showFitResultFrame, fitFromFile, annealFitFromFile, showParamListFrame
 from spinwaves.spinwavecalc.spinwavepanel import showEditorWindow
 
@@ -49,6 +60,16 @@ def tmpFileName(pid, type):
         newName = "fitRecord_" + str(pid) + ".txt"
     return os.path.join(tmpDir, newName)
 
+def createView(processManager):
+    """Will display and return a frame object containing a ProcessManagerPanel
+    object which is connected to processManager."""
+    #Create a View
+    frame = wx.Frame(processManager.parent, -1, title = "Processes")
+    processManager.setView(ProcessManagerPanel(processManager, frame, -1))
+    frame.Fit()
+    frame.SetMinSize(frame.GetSize())
+    frame.Show()
+    return frame
 
 class ProcessManager():
     def __init__(self, parentWindow = None):
@@ -58,17 +79,20 @@ class ProcessManager():
         self._analyticDispThread = None
         self._numericDispThread = None
         self._fitThread = None
-        self._analyticCrossSecThread = None
+        self._crossSecThread = None
+        self._calcHsaveThread = None
         
         self._analyticDispQueue = Queue()
         self._numericDispQueue = Queue()
         self._fitQueue = Queue()
-        self._analyticCrossSecQueue = Queue()
+        self._crossSecQueue = Queue()
+        self._calcHsaveQueue = Queue()
         
         self._analyticDispProcesses= []
         self._numericDispProcesses= []
         self._fitProcesses= []
-        self._analyticCrossSecProcesses= []
+        self._crossSecProcesses= []
+        self._calcHsaveProcesses = []
         #self.processes = []
         
         #Storing snapshots of the current fitting state
@@ -76,13 +100,8 @@ class ProcessManager():
         self._fitInfoThread = None
         self._fitRecordQueue = Queue()
         
-        #Create a View
-        frame = wx.Frame(self.parent, -1, title = "Processes")
-        self.view = ProcessManagerPanel(self, frame, -1)
-        frame.Fit()
-        frame.SetMinSize(frame.GetSize())
-        frame.Show()
-        
+    def setView(self, procManagerPanel):
+        self.view = procManagerPanel
     
     def processDone(self, pid):
         """This method should be called by the thread receiving the data from the process when data is received,
@@ -91,21 +110,32 @@ class ProcessManager():
         for i in range(len(self._analyticDispProcesses)):
             if self._analyticDispProcesses[i].pid == pid:
                 del self._analyticDispProcesses[i]
+                if self._analyticDispQueue.empty():
+                    self._analyticDispThread = None
                 return
         for i in range(len(self._numericDispProcesses)):
             if self._numericDispProcesses[i].pid == pid:
                 del self._numericDispProcesses[i]
+                if self._numericDispQueue.empty():
+                    self._numericDispThread = None
                 return
-        for i in range(len(self._analyticCrossSecProcesses)):
-            if self._analyticCrossSecProcesses[i].pid == pid:
-                del self._analyticCrossSecProcesses[i]
+        for i in range(len(self._crossSecProcesses)):
+            if self._crossSecProcesses[i].pid == pid:
+                del self._crossSecProcesses[i]
+                if self._crossSecQueue.empty():
+                    self._crossSecThread = None
+                return
+        for i in range(len(self._calcHsaveProcesses)):
+            if self._calcHsaveProcesses[i].pid == pid:
+                del self._calcHsaveProcesses[i]
+                if self._calcHsaveQueue.empty():
+                    self._calcHsaveThread = None
                 return
         for i in range(len(self._fitProcesses)):
             if self._fitProcesses[i].pid == pid:
                 del self._fitProcesses[i]
                 del self._fitSnapshots[pid]
                 return
-        
         
     def killProcess(self, pid):
         """Currently the terminate() method is called which runs the risk of corrupting a queue if it is being accessed
@@ -122,7 +152,11 @@ class ProcessManager():
             if p.pid == pid:
                 p.terminate()
                 return
-        for p in self._analyticCrossSecProcesses:
+        for p in self._crossSecProcesses:
+            if p.pid == pid:
+                p.terminate()
+                return
+        for p in self._calcHsaveProcesses:
             if p.pid == pid:
                 p.terminate()
                 return
@@ -151,14 +185,17 @@ class ProcessManager():
             if p.pid == pid:
                 processType = "Fit"
                 return processType, self._fitSnapshots[pid]
-        for p in self._analyticCrossSecProcesses:
+        for p in self._crossSecProcesses:
             if p.pid == pid:
                 processType = "AnalyticCrossSec"
                 return processType, (tmpFileName(pid, 0), tmpFileName(pid, 1))
+        for p in self._calcHsaveProcesses:
+            if p.pid == pid:
+                processType = "CalcHsave"
+                return processType, (tmpFileName(pid, 0), tmpFileName(pid, 1))
         
-        
-    def startAnalyticDispersion(self, interaction_file, spin_file):
-        p = Process(target=AnalyticDispFunc, args=(self._analyticDispQueue, interaction_file, spin_file))
+    def startAnalyticDispersion(self, Hsave):
+        p = Process(target=AnalyticDispFunc, args=(self._analyticDispQueue, Hsave))
         self._analyticDispProcesses.append(p)
         #self.processes.append(p)
         p.start()
@@ -170,8 +207,8 @@ class ProcessManager():
             self._analyticDispThread.start()
        
     
-    def startNumericDispersion(self, interaction_file, spin_file, direction, k_min, k_max, steps): 
-        p = Process(target = NumericDispFunc, args = (self._numericDispQueue, interaction_file, spin_file, direction, k_min, k_max, steps))
+    def startNumericDispersion(self, Hsave, direction, k_min, k_max, steps): 
+        p = Process(target = NumericDispFunc, args = (self._numericDispQueue, Hsave, direction, k_min, k_max, steps))
         self._numericDispProcesses.append(p)
         #self.processes.append(p)
         p.start()
@@ -202,19 +239,33 @@ class ProcessManager():
         if self._fitInfoThread == None:
             self._fitInfoThread = FitSnapshotThread(self._fitRecordQueue, self)
             self._fitInfoThread.start()
-        
-        
-    def startAnalyticCrossSection(self, interaction_file, spin_file):
+
+    def startCrossSection(self, interaction_file, spin_file, hkl_interval, w_interval, tau_list, direction,
+                                  temperature, outpath, sphavg_bool, plotchars):
         #AnalyticCrossSectionFunc(self._analyticCrossSecQueue, interaction_file, spin_file)
-        p = Process(target = AnalyticCrossSectionFunc, args = (self._analyticCrossSecQueue, interaction_file, spin_file))
-        self._analyticCrossSecProcesses.append(p)
+        args = (interaction_file, spin_file, hkl_interval, w_interval, tau_list, direction,
+                temperature, outpath, sphavg_bool, plotchars)
+        p = Process(target = CrossSectionFunc, args = (self._crossSecQueue, args))
+        self._crossSecProcesses.append(p)
         #self.processes.append(p)
         p.start()
         if self.view:
-            self.view.AddProcess(p.pid, "Analytic Cross Section", "running")
-        if self._analyticCrossSecThread == None:
-            self._analyticCrossSecThread = AnalyticCrossSectionThread(self.parent, self._analyticCrossSecQueue, self)
-            self._analyticCrossSecThread.start()
+            self.view.AddProcess(p.pid, "Cross Section Calculation", "running")
+        if self._crossSecThread == None:
+            self._crossSecThread = CrossSectionThread(self.parent, self._crossSecQueue, self)
+            self._crossSecThread.start()
+            
+    def startCalcHsave(self, interaction_file, spin_file, direction, k_min, k_max, steps):
+        p = Process(target=CalcHsaveFunc, args=(self._calcHsaveQueue, interaction_file, spin_file, direction, k_min, k_max, steps))
+        self._calcHsaveProcesses.append(p)
+        #self.processes.append(p)
+        p.start()
+        if self.view:
+            self.view.AddProcess(p.pid, "Calculating Hsave", "running")
+        #AnalyticDispFunc(self._analyticDispQueue, interaction_file, spin_file)
+        if self._calcHsaveThread == None:
+            self._calcHsaveThread = CalcHsaveThread(self.parent, self._calcHsaveQueue, self)
+            self._calcHsaveThread.start()
 
 
 
@@ -278,23 +329,25 @@ class ProcessManagerPanel(wx.Panel):
         the spinwave calc panel will be displayed which shows the version of the interaction and spin files that
         the process is using."""
         item = self.process_list_ctrl.GetFocusedItem()
-        pid = int(self.process_list_ctrl.GetItemText(item))
-        type, info = self.procManager.getProcessInfo(pid)
-        if type=="AnalyticDisp" or type=="NumericDisp" or type=="AnalyticCrossSec":
-            panel = showEditorWindow(self, "Files being used by process: " + str(pid), allowEditting = False)
-            panel.loadInteractions(info[0])
-            panel.loadSpins(info[1])
-        if type=="Fit":
-            showParamListFrame(info, str(pid) + " Fit Snapshot")
-        else:
-            print "Info for this type of process not implemented!"
-        event.Skip()
+        if item != -1: #If there is no focused item, -1 is returned.
+            pid = int(self.process_list_ctrl.GetItemText(item))
+            type, info = self.procManager.getProcessInfo(pid)
+            if type=="AnalyticDisp" or type=="NumericDisp" or type=="AnalyticCrossSec":
+                panel = showEditorWindow(self, "Files being used by process: " + str(pid), allowEditting = False)
+                panel.loadInteractions(info[0])
+                panel.loadSpins(info[1])
+            if type=="Fit":
+                showParamListFrame(info, str(pid) + " Fit Snapshot")
+            else:
+                print "Info for this type of process not implemented!"
+            event.Skip()
         
     def OnKill(self, evt):
         item = self.process_list_ctrl.GetFocusedItem()
-        pid = int(self.process_list_ctrl.GetItemText(item))
-        self.procManager.killProcess(pid)
-        self.removeProcess(pid)
+        if item != -1: #If there is no focused item, -1 is returned.
+            pid = int(self.process_list_ctrl.GetItemText(item))
+            self.procManager.killProcess(pid)
+            self.removeProcess(pid)
 
 # end of class ProcessManagerPanel
 
@@ -309,7 +362,29 @@ def ShowProcessesFrame(procManager):
     frame.Show()
     return frame
         
+#----Calculate Hsave-----------------------------------------------------------   
+class CalcHsaveThread(Thread):
+   def __init__ (self, parentWindow, queue, procManager):
+      Thread.__init__(self)
+      self.parent = parentWindow
+      self.queue = queue
+      self.procManager = procManager
     
+   def run(self):
+#       while(True):
+           result = self.queue.get()
+           pid = result[0]
+           data = result[1]
+           self.procManager.processDone(pid)
+           self.procManager.startAnalyticDispersion(data[0])
+           self.procManager.startNumericDispersion(*data)
+
+def CalcHsaveFunc(queue, int_file, spin_file, direction, k_min, k_max, steps):
+    pid = os.getpid()
+    int_file = createFileCopy(int_file, pid, 0)
+    spin_file = createFileCopy(spin_file, pid, 1)
+    Hsave = spinwave_calc_file.driver1(spin_file, int_file)
+    queue.put((pid, (Hsave, direction, k_min, k_max, steps)))
         
 #----Analytic Dispersion-----------------------------------------------------------   
 class AnalyticDispersionThread(Thread):
@@ -320,35 +395,28 @@ class AnalyticDispersionThread(Thread):
       self.procManager = procManager
     
    def run(self):
-       while(True):
+#       while(True):
            result = self.queue.get()
            pid = result[0]
            ans = result[1]
-           wx.CallAfter(showAnalyticEigs, ans)
            self.procManager.processDone(pid)
-           #send(signal = "Analytic Dispersion Complete", answer = ans)
-           #evt = AnalyticDispCompleteEvent(myAnalyticDispEvt, None)
-           #evt.SetAns(ans)
-           
-           #eig_frame = printing.LaTeXDisplayFrame(self.parent, ans, 'Dispersion Eigenvalues')
-           #eig_frame.Show()
+           print 'giving wx a callback'
+           wx.CallAfter(showAnalyticEigs, ans)
+           #showAnalyticEigs(ans)
 
-def AnalyticDispFunc(queue, int_file, spin_file):
+
+def AnalyticDispFunc(queue, Hsave):
     pid = os.getpid()
-    int_file = createFileCopy(int_file, pid, 0)
-    spin_file = createFileCopy(spin_file, pid, 1)
-    #Since calculating Hsave is most of what the numeric process does, it might be better not to do this twice.
-    Hsave = spinwave_calc_file.driver1(spin_file, int_file)
     myeigs=printing.eig_process(deepcopy(Hsave))
     queue.put((pid, printing.create_latex(myeigs, "eigs")))         
      
 def showAnalyticEigs(ans):
+    print 'creating latex frame'
     eig_frame = printing.LaTeXDisplayFrame(None, ans, 'Dispersion Eigenvalues')
+    print 'showing latex frame'
     eig_frame.Show()
+    print 'latex frame up'
 
-    
-    
-    
 #----Numeric Dispersion-------------------------------------------------------------   
 class NumericDispersionThread(Thread):
     def __init__ (self, parentWindow, queue, procManager):
@@ -358,7 +426,7 @@ class NumericDispersionThread(Thread):
       self.procManager = procManager
       
     def run(self):
-        while(True):
+#        while(flag):
             result = self.queue.get()
             pid = result[0]
             ans = result[1]
@@ -366,17 +434,14 @@ class NumericDispersionThread(Thread):
             qrange = ans[0]
             wrange = ans[1]
             wx.CallAfter(showPlot, qrange, wrange)
-           
-            
-        
-def NumericDispFunc(queue, int_file, spin_file, direction, k_min, k_max, steps):
+
+def NumericDispFunc(queue, Hsave, direction, k_min, k_max, steps):
     pid = os.getpid()
-    int_file = createFileCopy(int_file, pid, 0)
-    spin_file = createFileCopy(spin_file, pid, 1)
-    Hsave = spinwave_calc_file.driver1(spin_file, int_file)
+    init_time = time.clock()
     qrange, wranges = spinwave_calc_file.driver2(Hsave, direction, steps, k_min, k_max)
+    print "numeric cross section time; ", time.clock()-init_time, " seconds"
     queue.put((pid,(qrange, wranges)))
-    
+
 def showPlot(qrange, wrange):
     fig = plt.figure()
     ax = fig.add_subplot(111)
@@ -384,7 +449,7 @@ def showPlot(qrange, wrange):
         ax.plot(qrange, wrange1)
         plt.hold(True)
     plt.show()
-            
+
 #----Fitting---------------------------------------------------------------------
 class FitThread(Thread):
     def __init__ (self, parentWindow, queue, procManager):
@@ -402,7 +467,7 @@ class FitThread(Thread):
             pid = result[0]
             self.procManager.processDone(pid)
             wx.CallAfter(showFitResultFrame,data, pid)
-            
+
 class FitSnapshotThread(Thread):
     def __init__(self, queue, procManager):
         Thread.__init__(self)
@@ -488,36 +553,40 @@ def AnnealFitFunc(queue, sessionXML, fileName, k, tmin, tmax, size, tfactor, use
 
 
     
-#----Analytic Cross Section-------------------------------------------------
-class AnalyticCrossSectionThread(Thread):
+#----Cross Section-------------------------------------------------
+class CrossSectionThread(Thread):
     def __init__ (self, parent, queue, procManager):
         Thread.__init__(self)
         self.queue = queue
         self.parent = parent
         self.procManager = procManager
-      
+
     def run(self):
-        while(True):
+#        while(True):
             result = self.queue.get()
             data = result[1]
             pid = result[0]
             self.procManager.processDone(pid)
-            wx.CallAfter(showAnalyticCrossSectionFrame, self.parent, data, pid)
-        
-            
-def AnalyticCrossSectionFunc(queue, int_file, spin_file):
+            wx.CallAfter(load_plot, *data)
+
+def CrossSectionFunc(queue, args):
     pid = os.getpid()
-    int_file = createFileCopy(int_file, pid, 0)
-    spin_file = createFileCopy(spin_file, pid, 1)
-    N_atoms_uc,csection,kaprange,qlist,tau_list,eig_list,kapvect,wtlist = run_cross_section(int_file, spin_file)
-    queue.put((pid,printing.create_latex(csection, "eigs")))  #(PID, answer)
-        
-def showAnalyticCrossSectionFrame(parent, ans, pid):
-    #Almost the same as showAnalyticEigs()
-    eig_frame = printing.LaTeXDisplayFrame(parent, ans, 'CrossSection Eigenvalues, PID: ' + str(pid))
-    eig_frame.Show()
-        
-           
+#    cs_driver(*args)
+#    csection_arrays = np.load('csection_calc_data.npz')
+#    csection = csection_arrays['csection'][0]
+#    queue.put((pid,printing.create_latex(csection, "Cross section")))  #(PID, answer)
+#    args = args[:-2]+(False, True)
+#    if args == None:
+#        raise Exception("Nonetype")
+    outpath, colorbar_bool, plot_min, plot_max  = cs_driver(*args)
+    queue.put((pid, (outpath, colorbar_bool, plot_min, plot_max)))
+
+#def showCrossSectionFrame(parent, ans, pid):
+#    #Almost the same as showAnalyticEigs()
+#    eig_frame = printing.LaTeXDisplayFrame(parent, ans, 'Cross Section, PID: ' + str(pid))
+#    eig_frame.Show()
+
+
         
 #for testing
 class App(wx.App):

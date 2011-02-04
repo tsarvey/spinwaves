@@ -1,4 +1,15 @@
 """
+Disclaimer
+==========
+
+This software was developed at the National Institute of Standards and Technology at the NIST Center for Neutron Research by employees of the Federal Government in the course of their official duties. Pursuant to title 17 section 105* of the United States Code this software is not subject to copyright protection and is in the public domain. The SPINAL software package is an experimental spinwave analysis system. NIST assumes no responsibility whatsoever for its use, and makes no guarantees, expressed or implied, about its quality, reliability, or any other characteristic. The use of certain trade names or commercial products does not imply any endorsement of a particular product, nor does it imply that the named product is necessarily the best product for the stated purpose. We would appreciate acknowledgment if the software is used.
+
+*Subject matter of copyright: United States Government works
+
+Copyright protection under this title is not available for any work of the United States Government, but the United States Government is not precluded from receiving and holding copyrights transferred to it by assignment, bequest, or otherwise."""
+
+
+"""
 This file contains 4 methods to create LaTeX output. 
 1.) The first method creates the latex popup wxpython window
     - uses the create_latex, eig_process, process_info methods and LaTeXDisplayFrame class
@@ -60,7 +71,7 @@ def create_latex(input, name = None):
                 print e
     
     # Input is a string
-    else: output = output+"\n\n"
+    else: output = input+"\n\n"
 
     
     # If the input was a list, join all the pieces into one string with 2 spaces between them. 
@@ -81,6 +92,7 @@ def create_latex(input, name = None):
     # Send the output through the pipe
     #conn.send(output)
     #conn.close()
+    print 'output: ', output
     return output
 
 def eig_process(mat):
@@ -92,8 +104,11 @@ def eig_process(mat):
     elif isinstance(mat, sp.matrices.Matrix):
         # Currently, sympy's quartic/cubic polynomial solvers suck so this is currently out of commission. 
         #print mat.eigenvals().keys()
-        return mat.eigenvals().keys()
-        #return 1
+        try:
+            return mat.eigenvals().keys()
+        except:
+            return "Characteristic polynomial cannot be decomposed"
+    #return 1
 
 def process_info(title):
     """ This method just prints process names and IDs """
@@ -107,8 +122,7 @@ class LaTeXDisplayFrame(wx.Frame):
         wx.Frame.__init__(self, parent, -1, title, size=(300,250))
         self.parent = parent
         #self.PID = ID
-        self.input = input_text
-        self.input  ="HI!"
+        self.input = ''+input_text
 
         
         panel = wx.Panel(self,-1)

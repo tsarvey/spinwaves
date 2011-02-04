@@ -1,8 +1,22 @@
-import AtomClass
+"""
+Disclaimer
+==========
+
+This software was developed at the National Institute of Standards and Technology at the NIST Center for Neutron Research by employees of the Federal Government in the course of their official duties. Pursuant to title 17 section 105* of the United States Code this software is not subject to copyright protection and is in the public domain. The SPINAL software package is an experimental spinwave analysis system. NIST assumes no responsibility whatsoever for its use, and makes no guarantees, expressed or implied, about its quality, reliability, or any other characteristic. The use of certain trade names or commercial products does not imply any endorsement of a particular product, nor does it imply that the named product is necessarily the best product for the stated purpose. We would appreciate acknowledgment if the software is used.
+
+*Subject matter of copyright: United States Government works
+
+Copyright protection under this title is not available for any work of the United States Government, but the United States Government is not precluded from receiving and holding copyrights transferred to it by assignment, bequest, or otherwise."""
+
 #from vtk import *
-import numpy
+
+import numpy as np
+import sympy as sp
 import wx
 from wx.py.dispatcher import connect, send
+
+import AtomClass
+from SpaceGroups import GetSpaceGroup
 
 class JParam():
     """This class represents one value in a 3*3 J matrix.  In the simplest case it would
@@ -144,6 +158,7 @@ class bondListGrid(wx.grid.Grid):
     values stored in the bond table stored by the session."""
     def __init__(self, parent, id, session):
         wx.grid.Grid.__init__(self, parent, id)
+        self.session = session
         self.table = session.getBondTable()
         self.SetTable(self.table)
         self.AutoSize()
@@ -194,7 +209,8 @@ class bondListGrid(wx.grid.Grid):
             else:
                 self.table.SetValue(row,9,'')
         elif col==8 and row >=0:  #Jij matrix
-            dialog = jijDialog(self.table.GetActualValue(row,8))#Pass current Jij value
+            sg = self.session.getMagneticCell().space_Group
+            dialog = jijDialog(self.table.GetActualValue(row,8), 4)#Pass current Jij value
             result = dialog.ShowModal()
             if result == wx.ID_OK:
                 #self.table.SetValue(row, 8, numpy.array(dialog.getMatrix()))
@@ -240,7 +256,7 @@ class bondPanel(wx.Panel):
         connect(self.OnFileLoad, signal = "File Load")
 
         #Create the parameter editing frame
-        paramFrame = wx.Frame(self.GetParent(), -1, "Parameters")
+        paramFrame = wx.Frame(self, -1, "Parameters")
         param_panel = ParameterPanel(self.bondList.table, paramFrame, -1)
         paramFrame.Show()
         
@@ -250,7 +266,7 @@ class bondPanel(wx.Panel):
         self.GetParent().SetMinSize(self.GetParent().GetSize())
         
         connect(self.OnParamChange, signal = "Parameter Values Changed")
-
+        connect(self.OnGenerate, signal = "Generate Bonds")
 
     def OnParamChange(self):
         self.bondList.Refresh()
@@ -274,24 +290,26 @@ class bondPanel(wx.Panel):
 #            self.bondList.SetCellValue(i, 7, bondData[i][7])
 #            self.bondList.SetCellValue(i, 8, bondData[i][8])
 #            self.bondList.SetCellValue(i, 9, bondData[i][9])
-    
+
     def OnBondAddition(self, atom1, atom2):
         """This method is called when another window adds a bond and calls
         send(signal = "Bond Added"..."""
         cell1 = atom1.getUnitCell()
         cell2 = atom2.getUnitCell()
         
-        index1 = atom1.getIndexNumber()
-        index2 = atom2.getIndexNumber()
+        #index1 = atom1.getIndexNumber()
+        #index2 = atom2.getIndexNumber()
+        id1 = atom1.getIDNum()
+        id2 = atom2.getIDNum()
         pos1 = cell1.getPosition()
         pos2 = cell2.getPosition()
 
         row = self.bondList.GetNumberRows() #Append row and add bond to last row
-        self.bondList.SetCellValue(row, 0, str(index1+1))
+        self.bondList.SetCellValue(row, 0, str(id1))
         self.bondList.SetCellValue(row, 1, str(pos1[0]))
         self.bondList.SetCellValue(row, 2, str(pos1[1]))
         self.bondList.SetCellValue(row, 3, str(pos1[2]))
-        self.bondList.SetCellValue(row, 4, str(index2+1))
+        self.bondList.SetCellValue(row, 4, str(id2))
         self.bondList.SetCellValue(row, 5, str(pos2[0]))
         self.bondList.SetCellValue(row, 6, str(pos2[1]))
         self.bondList.SetCellValue(row, 7, str(pos2[2]))
@@ -339,8 +357,17 @@ class bondPanel(wx.Panel):
         print failed
         if failed:
             return
+        self.session.clearBonds()
+        for bond in bondData:
+            self.session.addBond(atom1Num = bond[0], atom1CellPos =
+                                 (bond[1], bond[2], bond[3]),
+                                 atom2Num = bond[4], atom2CellPos =
+                                 (bond[5], bond[6], bond[7]), 
+                                 jMatrix = bond[8])
+        self.session.refreshGUI()
 #        send(signal = "Bond Change", sender = "Bond Panel", bondData = bondData)
-        self.session.changeBonds(bondData)
+#        self.session.changeBonds(bondData)
+
       
     
     def validate(self):
@@ -801,10 +828,10 @@ hold Ctrl and click other parameters to tie to.")
 class jijDialog(wx.Dialog):
     """This dialog is displayed when the user clicks on the Jij Cell in the bond
     grid.  It allows them to enter a Jij Matrix."""
-    def __init__(self, currentVal):
+    def __init__(self, currentVal, sg):
         wx.Dialog.__init__(self, None, -1, 'Jij Matrix')
         self.matrix = currentVal
-       
+        self.sg = sg
         mainSizer = wx.BoxSizer(wx.VERTICAL)   
 
         #Add radio buttons to switch between fixed values and variables
@@ -860,17 +887,48 @@ class jijDialog(wx.Dialog):
         
     def updateTable(self):
         """Updates displayed values to those in the parameter matrix"""
-        self.grid.SetCellValue(0,0,str(self.matrix[0][0]))
-        self.grid.SetCellValue(0,1,str(self.matrix[0][1]))
-        self.grid.SetCellValue(0,2,str(self.matrix[0][2]))
-        self.grid.SetCellValue(1,0,str(self.matrix[1][0]))
-        self.grid.SetCellValue(1,1,str(self.matrix[1][1]))
-        self.grid.SetCellValue(1,2,str(self.matrix[1][2]))
-        self.grid.SetCellValue(2,0,str(self.matrix[2][0]))
-        self.grid.SetCellValue(2,1,str(self.matrix[2][1]))
-        self.grid.SetCellValue(2,2,str(self.matrix[2][2]))
+        c = self.constrainjij(self.sg)
+        if c[0,0]:
+            self.grid.SetCellValue(0,0,str(self.matrix[0][0]))
+        if c[0,1]:
+            self.grid.SetCellValue(0,1,str(self.matrix[0][1]))
+        if c[0,2]:
+            self.grid.SetCellValue(0,2,str(self.matrix[0][2]))
+        if c[1,0]:
+            self.grid.SetCellValue(1,0,str(self.matrix[1][0]))
+        if c[1,1]:
+            self.grid.SetCellValue(1,1,str(self.matrix[1][1]))
+        if c[1,2]:
+            self.grid.SetCellValue(1,2,str(self.matrix[1][2]))
+        if c[2,0]:
+            self.grid.SetCellValue(2,0,str(self.matrix[2][0]))
+        if c[2,1]:
+            self.grid.SetCellValue(2,1,str(self.matrix[2][1]))
+        if c[2,2]:
+            self.grid.SetCellValue(2,2,str(self.matrix[2][2]))
         self.grid.AutoSize()
-        
+    
+    def constrainjij(self, num):
+        if num != None:
+            jij = np.matrix(sp.symarray((3,3),'a'))
+            sg = GetSpaceGroup(num)
+            r = jij
+            for op in sg.iter_symops():
+                R = op.R
+                r = R.T * r * R
+            c = np.where((r-jij)!=0, False, True)
+    
+            for i in range(3):
+                for j in range(3):
+                    if not c[i,j]:
+                        self.grid.SetCellValue(i, j, str(0.0))
+                        a = wx.grid.GridCellAttr()
+                        a.SetBackgroundColour(wx.LIGHT_GREY)
+                        self.grid.SetAttr(i, j, a)
+                        self.grid.SetReadOnly(i, j)
+            return c
+        return np.ones((3,3))
+
     def OnLeftClick(self, evt):
         """When there is a left lick on a cell, if the radio button is set to fixed
         values, the event will be passed on and the user will be able to enter values.
@@ -932,10 +990,13 @@ class jijDialog(wx.Dialog):
             for i in range(3):
                 for j in range(3):
                     try:
-                        float(self.grid.GetCellValue(i,j))
-                        attr = wx.grid.GridCellAttr()
-                        attr.SetBackgroundColour("white")
-                        self.grid.SetAttr(i,j,attr)
+                        if self.grid.GetCellBackgroundColour(i,j) == wx.LIGHT_GREY:
+                            pass
+                        else:
+                            float(self.grid.GetCellValue(i,j))
+                            attr = wx.grid.GridCellAttr()
+                            attr.SetBackgroundColour("white")
+                            self.grid.SetAttr(i,j,attr)
                     except:
                         attr = wx.grid.GridCellAttr()
                         attr.SetBackgroundColour(bgColor)

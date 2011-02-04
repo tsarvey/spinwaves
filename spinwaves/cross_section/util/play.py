@@ -1,3 +1,14 @@
+"""
+Disclaimer
+==========
+
+This software was developed at the National Institute of Standards and Technology at the NIST Center for Neutron Research by employees of the Federal Government in the course of their official duties. Pursuant to title 17 section 105* of the United States Code this software is not subject to copyright protection and is in the public domain. The SPINAL software package is an experimental spinwave analysis system. NIST assumes no responsibility whatsoever for its use, and makes no guarantees, expressed or implied, about its quality, reliability, or any other characteristic. The use of certain trade names or commercial products does not imply any endorsement of a particular product, nor does it imply that the named product is necessarily the best product for the stated purpose. We would appreciate acknowledgment if the software is used.
+
+*Subject matter of copyright: United States Government works
+
+Copyright protection under this title is not available for any work of the United States Government, but the United States Government is not precluded from receiving and holding copyrights transferred to it by assignment, bequest, or otherwise."""
+
+
 import matplotlib
 matplotlib.use('WXAgg')
 import pylab
@@ -18,8 +29,66 @@ from util.printing import *
 from multiprocessing import Process, Lock
 import matplotlib.pyplot as plt
 import spinwaves.spinwavecalc.readfiles as rf
+from csection_calc import plot_cross_section
 
 if 1:
+    print sys.path
+    sys.exit()
+
+if 1:
+    f = file(u"C:\\file.txt",'w')
+    x = np.array([1])
+    x.dump(f)
+    x.dump(f)
+    x.dump(f)
+    f.close()
+    f = file(u"C:\\file.txt",'r')
+    x = np.load(f)
+    y = np.load(f)
+    z = np.load(f)
+    print x,y,z
+    f.close()
+
+if 0:
+    file_pathname = r"C:"#'C:\Documents and Settings\wflynn\My Documents\workspace\spinwaves_git\spinwaves\spinwavecalc'#os.path.abspath('')
+
+    x = np.load(os.path.join(file_pathname,'\oakridgeo.txt.npy'))
+#    x = np.load(os.path.join(file_pathname,'oldHlin.txt.npy'))
+#    y = np.load(os.path.join(file_pathname,'newHlin.txt.npy'))
+    
+#    x=x[0].expand()
+#    y=y[0].expand()
+
+    print x
+    print np.where(x[2:]>1)
+    plot_cross_section(x[0],x[1],x[2:],minval=0,maxval=1)
+#    print y    
+    
+#    z = x - y
+#    print sp.simplify(z)
+
+def chop(expr, eps):
+    cls = expr.__class__
+    newexpr = 0
+    terms = expr.args
+    for term in terms:
+        if term.as_coeff_terms()[0] > eps:
+            newexpr += term
+    return newexpr
+    
+if 0:
+    x,y,z = sp.symbols('xyz')
+    expr1 = 0.01*x + 0.0001*y + 0.1*x*z**2
+    expr2 = 0.01*x*y + 1e-6*y + 0.1*x*y
+    res = chop(expr1, 0.01)
+    print res
+#    sys.exit()
+    arr = np.array([expr1,expr2]).tolist()
+    res = map(chop, arr, [0.01])
+#    res = chop(arr, 0.01)
+    print res
+
+if 0:
     a = [1,2,3,4,5,6,7]
     b = [1,2,5]
     comms = [a[i] in b for i in range(len(a))]

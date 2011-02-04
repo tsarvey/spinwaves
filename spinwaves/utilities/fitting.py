@@ -1,3 +1,14 @@
+"""
+Disclaimer
+==========
+
+This software was developed at the National Institute of Standards and Technology at the NIST Center for Neutron Research by employees of the Federal Government in the course of their official duties. Pursuant to title 17 section 105* of the United States Code this software is not subject to copyright protection and is in the public domain. The SPINAL software package is an experimental spinwave analysis system. NIST assumes no responsibility whatsoever for its use, and makes no guarantees, expressed or implied, about its quality, reliability, or any other characteristic. The use of certain trade names or commercial products does not imply any endorsement of a particular product, nor does it imply that the named product is necessarily the best product for the stated purpose. We would appreciate acknowledgment if the software is used.
+
+*Subject matter of copyright: United States Government works
+
+Copyright protection under this title is not available for any work of the United States Government, but the United States Government is not precluded from receiving and holding copyrights transferred to it by assignment, bequest, or otherwise."""
+
+
 import sys
 import math
 import copy
@@ -224,7 +235,6 @@ def fitFromFile(fileName, session, size = 3 , k = 100, tMin = .001, tMax = 15, t
 
 def annealFitFromFile(fileName, session, size = 3 , k = 100, tMin = .001, tMax = 15, tFactor = .95, MCeveryTime = True, recordKeeper = None):
     domain, xErr, w, wErr = readDataFile(fileName)
-    print "\n\n\n\n\nAnnealing!\n\n\n\n"
     return annealFit(session, domain, w, wErr, size = size, k = k, tMin = tMin, tMax = tMax, tFactor = tFactor, MCeveryTime = MCeveryTime, recordKeeperCallback = recordKeeper)
 #Not dealing with domain err
 #def propogate_uncertainty(func, point, err, delt_h = 1E-12, delt_k = 1E-12, delt_l = 1E-12):
@@ -795,7 +805,7 @@ class FitResultPanel(wx.Panel):
 
 class ParamListPanel(wx.Panel):
     def __init__(self, rows, *args, **kwds):
-        """This just shows a two column list of parameters and there values.
+        """This just shows a two column list of parameters and their values.
         Rows is a list of rows, where each row is a size two tuple or list:
         rows[n][0] = parameter n label
         rows[n][1] = parameter n value"""

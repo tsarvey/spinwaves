@@ -1,3 +1,14 @@
+"""
+Disclaimer
+==========
+
+This software was developed at the National Institute of Standards and Technology at the NIST Center for Neutron Research by employees of the Federal Government in the course of their official duties. Pursuant to title 17 section 105* of the United States Code this software is not subject to copyright protection and is in the public domain. The SPINAL software package is an experimental spinwave analysis system. NIST assumes no responsibility whatsoever for its use, and makes no guarantees, expressed or implied, about its quality, reliability, or any other characteristic. The use of certain trade names or commercial products does not imply any endorsement of a particular product, nor does it imply that the named product is necessarily the best product for the stated purpose. We would appreciate acknowledgment if the software is used.
+
+*Subject matter of copyright: United States Government works
+
+Copyright protection under this title is not available for any work of the United States Government, but the United States Government is not precluded from receiving and holding copyrights transferred to it by assignment, bequest, or otherwise."""
+
+
 #!/usr/bin/env python
 
 """This is a test of wxVTKRenderWindow"""
@@ -244,13 +255,20 @@ class atomPanel(wx.Panel):
 #             magNa = magNa, magNb = magNb, magNc = magNc,
 #             cutNa = cutNa, cutNb = cutNb, cutNc = cutNc,
 #             atomData = atomData)
-        self.session.cellChange(spaceGroupInt = spaceGroup,
-             a = a, b = b, c = c,
-             alpha = alpha, beta = beta, gamma = gamma,
-             magNa = magNa, magNb = magNb, magNc = magNc,
-             cutNa = cutNa, cutNb = cutNb, cutNc = cutNc,
-             atomData = atomData)
-
+        #self.session.cellChange(spaceGroupInt = spaceGroup,
+        #     a = a, b = b, c = c,
+        #     alpha = alpha, beta = beta, gamma = gamma,
+        #     magNa = magNa, magNb = magNb, magNc = magNc,
+        #     cutNa = cutNa, cutNb = cutNb, cutNc = cutNc,
+        #     atomData = atomData)
+        self.session.updateCell(spaceGroupInt = spaceGroup,
+                                a = a, b = b, c = c,
+                                alpha = alpha, beta = beta, gamma = gamma,
+                                magNa = magNa, magNb = magNb, magNc = magNc,
+                                cutNa = cutNa, cutNb = cutNb, cutNc = cutNc,
+                                atomData = atomData)
+        self.session.refreshGUI()
+        
     
     def validate(self):
         """Currently checks that all values are the right type"""
@@ -616,17 +634,19 @@ class bondPanel(wx.Panel):
         cell1 = atom1.getUnitCell()
         cell2 = atom2.getUnitCell()
         
-        index1 = atom1.getIndexNumber()
-        index2 = atom2.getIndexNumber()
+        #index1 = atom1.getIndexNumber()
+        #index2 = atom2.getIndexNumber()
+        id1 = atom1.getIDNum()
+        id2 = atom2.getIDNum()
         pos1 = cell1.getPosition()
         pos2 = cell2.getPosition()
 
         row = self.bondList.GetNumberRows() #Append row and add bond to last row
-        self.bondList.SetCellValue(row, 0, str(index1+1))
+        self.bondList.SetCellValue(row, 0, str(id1))
         self.bondList.SetCellValue(row, 1, str(pos1[0]))
         self.bondList.SetCellValue(row, 2, str(pos1[1]))
         self.bondList.SetCellValue(row, 3, str(pos1[2]))
-        self.bondList.SetCellValue(row, 4, str(index2+1))
+        self.bondList.SetCellValue(row, 4, str(id2))
         self.bondList.SetCellValue(row, 5, str(pos2[0]))
         self.bondList.SetCellValue(row, 6, str(pos2[1]))
         self.bondList.SetCellValue(row, 7, str(pos2[2]))

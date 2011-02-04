@@ -1,3 +1,14 @@
+"""
+Disclaimer
+==========
+
+This software was developed at the National Institute of Standards and Technology at the NIST Center for Neutron Research by employees of the Federal Government in the course of their official duties. Pursuant to title 17 section 105* of the United States Code this software is not subject to copyright protection and is in the public domain. The SPINAL software package is an experimental spinwave analysis system. NIST assumes no responsibility whatsoever for its use, and makes no guarantees, expressed or implied, about its quality, reliability, or any other characteristic. The use of certain trade names or commercial products does not imply any endorsement of a particular product, nor does it imply that the named product is necessarily the best product for the stated purpose. We would appreciate acknowledgment if the software is used.
+
+*Subject matter of copyright: United States Government works
+
+Copyright protection under this title is not available for any work of the United States Government, but the United States Government is not precluded from receiving and holding copyrights transferred to it by assignment, bequest, or otherwise."""
+
+
 import os
 import ctypes
 from ctypes import c_float, c_int, c_long
@@ -12,6 +23,26 @@ from simple import readFile, Timer, simpleAtom
 from localOpt import opt_aux
 import spinwaves.spinwavecalc.readfiles as rf
 from spinwaves.spinwavecalc.readfiles import get_tokenized_line
+
+def we_are_frozen():
+    """
+    Returns whether we are frozen via py2exe.
+    This will affect how we find out where we are located.
+    """
+
+    return hasattr(sys, "frozen")
+
+
+def module_path():
+    """ 
+    This will get us the program's directory,
+    even if we are frozen using py2exe
+    """
+
+    if we_are_frozen():
+        return os.path.dirname(unicode(sys.executable, sys.getfilesystemencoding( )))
+
+    return os.path.dirname(unicode(__file__, sys.getfilesystemencoding( )))
 
 def loadLib():
     #dllpath=r'C:\mytripleaxisproject\trunk\eclipse\src\spinwaves\C code'
@@ -28,6 +59,11 @@ def loadLib():
     
     #f=open('c:\\trace.txt','w')
     dllpath=os.path.join(os.path.dirname(__file__),'_monteCarlo'+ext)#if executing .py files
+    modpath = module_path()
+#    dllpath = os.path.join(modpath, '_monteCarlo'+ext)#py2exe
+    # \/ \/ \/ THIS ONE WORKS \/ \/ \/ \/
+    #dllpath = os.path.join(r'\\ncnrwin\Storage\home1\bt7\Desktop\spinwaves\win\dist', '_monteCarlo'+ext)#py2exe
+    # /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\ /\
     #dllpath = os.path.join(os.path.dirname(sys.argv[0]), '_monteCarlo'+ext)#py2exe
     #dllpath=os.path.join(os.path.dirname(sys.argv[0]),'_monteCarlo'+ext)
     #f.write('dllpath '+dllpath)
@@ -178,7 +214,7 @@ def createVideo(spinsToImageFunction, outFilePath, inFilePath):
             totalMagZ += spin[2]
             
         magnetizations.append( (totalMagX**2 + totalMagY**2 + totalMagZ**2)**(.5) )
-        print "magnetization:", magnetizations[len(magnetizations)-1]  
+#        print "magnetization:", magnetizations[len(magnetizations)-1]  
         temperatures.append(T)
         totalMagX = 0
         totalMagY = 0
@@ -233,7 +269,7 @@ def write_to_file(outFilePath, atoms, spins):
     
     outFile.close()
 
-def simulate(k, tMax, tMin, tFactor, inFilePath, outFilePath, tol = 1e-12):
+def simulate(k, tMax, tMin, tFactor, inFilePath, outFilePath, tol = 1e-7):
     """Runs the monte carlo simulation written in C.
 
     k is the number of steps per temperature.
@@ -241,15 +277,22 @@ def simulate(k, tMax, tMin, tFactor, inFilePath, outFilePath, tol = 1e-12):
     at each temperature step.
     i.e. .9 would be a good factor."""
     
+    print "Loading..."
     atoms, jMatrices = readFile(inFilePath)#simple atom class defined in simple
-    spins = get_ground_state(k, tMax, tMin, tFactor, atoms, jMatrices)
+    if not jMatrices:
+        raise Exception("No Interactions were specified")
+    exceptionlist = [Exception('At least one jMatrix is empty') for mat in jMatrices if not mat.any()]
+    if exceptionlist:
+        raise exceptionlist[0]
+    spins = get_ground_state(k, tMax, tMin, tFactor, atoms, jMatrices, tol=tol)
     write_to_file(outFilePath, atoms, spins)
 
 
-def get_ground_state(k, tMax, tMin, tFactor, atoms, jMatrices, tol = 1e-25):
+def get_ground_state(k, tMax, tMin, tFactor, atoms, jMatrices, tol = 1e-7):
     """This method performs the monte carlo simulation and then locally
     optimizes the results without the use of files."""
     spins = Sim_Aux(k, tMax, tMin, tFactor, atoms, jMatrices)
+    print "Global Optimization Complete!"
     opt_spins = opt_aux(atoms, jMatrices, spins, tol)
     return opt_spins
 
@@ -329,6 +372,7 @@ def passMatrices(jMatrices):
 def Sim_Aux(k, tMax, tMin, tFactor, atoms, jMatrices):
     """The simulation has been separated (into this method) from the file
     reading and writing so that it can be run without files."""
+    print "Global Optimization Beginning..."
     #Create the atom list in C
     atomListPointer, matListList, nbr_ListList = passAtoms(atoms)
 
@@ -355,7 +399,7 @@ def Sim_Aux(k, tMax, tMin, tFactor, atoms, jMatrices):
 
 class MonteCarloPanel(wx.Panel):
     """This is a simple GUI for the monte Carlo simulation."""
-    def __init__(self, parent, id, defaultSteps, defaultTMax, defaultTMin, defaultTFactor, defaultInPath, defaultOutPath):
+    def __init__(self, parent, id, defaultSteps, defaultTMax, defaultTMin, defaultTFactor, defaultEps, defaultInPath, defaultOutPath):
         wx.Panel.__init__(self, parent, id)
         
         #Create the Flex Grid Sizer
@@ -384,7 +428,11 @@ class MonteCarloPanel(wx.Panel):
         self.stepsText = wx.TextCtrl(self, -1, value = str(defaultSteps), size = (60, -1), style = wx.TE_RICH2)
         topSizer.Add(stepsLabel, 0)
         topSizer.Add(self.stepsText, 0)
-        
+
+        epsLabel = wx.StaticText(self, -1, "Calculation Tolerance:")
+        self.epsText = wx.TextCtrl(self, -1, value = str(defaultEps), size = (60, -1), style = wx.TE_RICH2)
+        topSizer.Add(epsLabel, 0)
+        topSizer.Add(self.epsText, 0)
         
         bottomSizer = wx.FlexGridSizer(2,3,2,2)
         
@@ -408,9 +456,9 @@ class MonteCarloPanel(wx.Panel):
         self.runButton = wx.Button(self, -1, "Run Simulation")
         
         sizer = wx.BoxSizer(wx.VERTICAL)
-        sizer.Add(topSizer, 0)
+        sizer.Add(topSizer, 0, wx.ALIGN_CENTER)
         sizer.Add((1,20), 0, wx.EXPAND)#Spacer between filenames and simulation parameters
-        sizer.Add(bottomSizer, 0)
+        sizer.Add(bottomSizer, 0, wx.ALIGN_CENTER)
         sizer.Add((1,15), 0, wx.EXPAND)#Spacer before run button
         sizer.Add(self.runButton,0, wx.ALIGN_CENTER)
         
@@ -437,12 +485,12 @@ class MonteCarloPanel(wx.Panel):
         
     def OnRun(self, event):
         event.Skip()
-        failed, tMax, tMin, tFactor, steps = self.validate()
+        failed, tMax, tMin, tFactor, steps, eps = self.validate()
         if not failed:
 #            print steps, tMax, tMin, tFactor
 #            time.sleep(10)
             try:
-                simulate(steps, tMax, tMin, tFactor, self.inPathText.GetValue(), self.outPathText.GetValue())
+                simulate(steps, tMax, tMin, tFactor, self.inPathText.GetValue(), self.outPathText.GetValue(), tol=eps)
                 wx.MessageDialog(self, "Simulation Done!", caption = "Complete", style = wx.OK).ShowModal()
             except IOError:
                 wx.MessageDialog(None, "Bad File Name!", "File Name Error", wx.OK).ShowModal()
@@ -454,6 +502,7 @@ class MonteCarloPanel(wx.Panel):
         tMin = self.tMinText.GetValue()
         tFactor = self.tFactorText.GetValue()
         steps = self.stepsText.GetValue()
+        eps = self.epsText.GetValue()
         #For now, I will not validate the file path
         #inPath = self.inPathtext.GetValue()#Can check if it is readable
         
@@ -495,7 +544,17 @@ class MonteCarloPanel(wx.Panel):
             self.stepsText.SetStyle(0, len(steps), wx.TextAttr(colBack = bgColor))
             failed = True
             
-        return failed, numTmax, numTmin, numTfactor, numSteps 
+        #Validate eps(must be a float, small float as well)
+        numEps = None
+        try:
+            numEps = float(eps)
+            assert (numEps < 1)
+            self.epsText.SetStyle(0, len(eps), wx.TextAttr(colBack = "white"))
+        except:
+            self.epsText.SetStyle(0, len(eps), wx.TextAttr(colBack = bgColor))
+            failed = True
+            
+        return failed, numTmax, numTmin, numTfactor, numSteps, eps
  
          
 def ShowSimulationFrame():
@@ -503,14 +562,18 @@ def ShowSimulationFrame():
     #Defaults
     k = 100
     tMax = 10
-    tMin = .01
+    tMin = 0.001
     tFactor = .90
+    eps = 1e-7
     inFilePath = "C:\montecarlo.txt"
     outFilePath = "C:\Spins.txt"
         
     
-    frame = wx.Frame(None, -1, title = "Monte Carlo Simulation", size = (300,250))
-    MonteCarloPanel(frame, -1, k, tMax, tMin, tFactor, inFilePath, outFilePath)
+    #frame = wx.Frame(None, -1, title = "Monte Carlo Simulation", size = (300,250))
+    frame = wx.Frame(None, -1, title = "Monte Carlo Simulation")
+    MonteCarloPanel(frame, -1, k, tMax, tMin, tFactor, eps, inFilePath, outFilePath).Fit()
+    frame.Fit()
+    frame.SetMinSize(frame.GetSize())
     frame.Show()
     return frame
             
