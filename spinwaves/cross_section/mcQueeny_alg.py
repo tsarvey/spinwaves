@@ -1,6 +1,7 @@
 import numpy as np
 import time
 from spinwaves.spinwavecalc.readfiles import atom, readFiles
+from periodictable import elements
 
 
 def mcQueeny_case(interactionfile, spinfile, tau_list, temperature, 
@@ -453,3 +454,89 @@ def create_matrix(atom_list, jnums, jmats, numCutOff, magCellSize, q):
     #this creates eigenvalues that are different from ours by a factor of 2.  For now I'll
     #I'll just divide that out.
     return Mij/2.0
+
+
+
+
+#The following functions were copied from csection_calc, but also left in that file becuase they are useed by both
+#the MyQueeny algorithm and ours.  I duplicated the code becuase the code in this file is intended to be converted to Cython
+#and I assume that talking between cython and pthon is slow.
+
+
+
+
+#A copy of this was also left in cesction-calc because I assume talking between python and cyton is slow
+def generate_hkl(hkl_interval, direction):
+    
+    #TODO - THIS DOES NOT WORK FOR ALL CASES! only when directional components are the same or 0
+    #Fixed - testing
+    
+    #What if other points are 0 (not the first or last points)?
+    #For that to happen they would need to generate an odd number of points across an interval -x to x
+    if hkl_interval[0] == 0:
+        hkl_interval[0] = 1e-3
+    elif hkl_interval[1] == 0:
+        hkl_interval[1] = -1e-3
+        
+    print "hkl_interval: ", hkl_interval
+    print "direction: ", direction
+    
+    #We should be multipliying these linspaces by the components, kx,ky,kz, where those are
+    #normalized so that kx**2 + ky**2 + kz**2 = 1 (assuming that h**2+k**2+l**2=q**2), I'm not
+    #entirely sure if this works in inverse space.
+    norm = np.sqrt(direction['kx']**2 + direction['ky']**2 + direction['kz']**2)
+
+    if direction['kx']:
+        h_list = np.linspace(hkl_interval[0],hkl_interval[1],hkl_interval[2])*direction['kx']/norm
+    else:
+        h_list = np.zeros(hkl_interval[2])
+    if direction['ky']:
+        k_list = np.linspace(hkl_interval[0],hkl_interval[1],hkl_interval[2])*direction['ky']/norm
+    else:
+        k_list = np.zeros(hkl_interval[2])
+    if direction['kz']:
+        l_list = np.linspace(hkl_interval[0],hkl_interval[1],hkl_interval[2])*direction['kz']/norm
+    else:
+        l_list = np.zeros(hkl_interval[2])
+        
+    #print "h,k,l points: "
+    #for i in range(len(h_list)):
+    #    print "(",h_list[i],", ", k_list[i], ", ", l_list[i], ")"
+
+    return h_list, k_list, l_list
+
+#A copy of this was also left in cesction-calc because I assume talking between python and cyton is slow
+def generate_wt(omega_interval):
+
+    return np.linspace(omega_interval[0],omega_interval[1],omega_interval[2])
+
+#A copy of this was also left in cesction-calc because I assume talking between python and cyton is slow
+def generate_form_factors(N_atoms_uc, atom_list, hkl_interval):
+    # Form Factor
+    eval_pnts = np.linspace(hkl_interval[0],hkl_interval[1],hkl_interval[2])
+    ff_list = []
+    for i in range(N_atoms_uc):
+        try:
+            elSym = atom_list[i].label
+            elSym = elements.symbol(elSym)
+            elMass = atom_list[i].massNum
+            if elMass == None: #The mass number will now generally be None -Tom 1/28/11
+                el = elSym
+            else:
+                el = elSym[elMass]
+            print el
+            val = atom_list[i].valence
+            if val != None:
+                Mq = el.magnetic_ff[val].M_Q(eval_pnts)
+            else:
+                Mq = el.magnetic_ff[0].M_Q(eval_pnts)
+        except:
+            Mq = np.zeros(len(eval_pnts))
+        #Test to see how things look without ff
+        #Mq = np.ones(len(eval_pnts))
+        
+        ff_list = Mq
+#    fake = np.ones(len(kaprange))
+    return np.array(ff_list)
+
+from csection_calc import LIFETIME_VALUE
