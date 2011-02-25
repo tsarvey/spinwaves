@@ -15,11 +15,11 @@ from periodictable import elements
 #        self.interactions = interactions
 #        self.spin = spin
 
-cdef struct simple_C_atom:
-    np.ndarray[np.int32_t, ndim=1] neighbors
-    #int[] neighbors
-    np.ndarray[np.int32_t, ndim=1] interactions
-    np.ndarray[np.float64_t, ndim=1] spin[3]
+#cdef struct simple_C_atom:
+#    np.ndarray[np.int32_t, ndim=1] neighbors
+#    #int[] neighbors
+#    np.ndarray[np.int32_t, ndim=1] interactions
+#    np.ndarray[np.float64_t, ndim=1] spin[3]
 
 def mcQueeny_case(interactionfile, spinfile, tau_list, temperature, 
                       direction={'kx':1,'ky':0,'kz':0}, hkl_interval=[1e-3,2*np.pi,100], 
@@ -58,15 +58,17 @@ def mcQueeny_case(interactionfile, spinfile, tau_list, temperature,
     atom_list, jnums, jmats, N_atoms_uc, numCutOff, magCellSize = readFiles(interactionfile,spinfile, rtn_cutOffInfo = True)
     
     #convert the results from readFiles to cython static code
-    list = []
-    cdef np.ndarray[np.int32_t, ndim=1] nbrs, ints
-    cdef np.ndarray[np.float64_t, ndim=1] spin
-    for atom in range(atom_list):
+    #list = []
+    #cdef np.ndarray[np.int32_t, ndim=1] nbrs, ints
+    #cdef np.ndarray[np.float64_t, ndim=1] spin
+    #for atom in range(atom_list):
         #cdef np.ndarray[np.int32_t, ndim=1] nbrs = np.array(atom.neighbors)
         #cdef np.ndarray[np.int32_t, ndim=1] ints = np.array(atom.interactions)
         #cdef np.ndarray[np.float64_t, ndim=1] spin = np.array(atom.spin)
-        list.append(simple_C_atom(atom.neighbors, atom.interactions, atom.spin))
-    cdef np.ndarray[simple_C_atom, ndim=1] c_atom_list = np.array(list)
+        #list.append(simple_C_atom(atom.neighbors, atom.interactions, atom.spin))
+    #cdef np.ndarray[simple_C_atom, ndim=1] c_atom_list = np.array(list)
+    #Rather than keeping the same structure(which doesn't seem possible), I will just make 3 arrays:
+    cdef np.ndarray[np.ndarray[np.int32,ndim=1], ndim = 1] neighbor_list
 
     h_list, k_list, l_list = generate_hkl(hkl_interval, direction)
     e = generate_wt(omega_interval)
